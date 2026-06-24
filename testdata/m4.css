@@ -1,0 +1,28 @@
+.card {
+	border-radius: 4px;
+}
+
+.col-1 {
+	width: 10px;
+}
+
+.col-2 {
+	width: 20px;
+}
+
+.col-3 {
+	width: 30px;
+}
+
+.message, .card {
+	padding: 10px;
+}
+
+.card {
+	color: blue;
+}
+
+.box {
+	margin-left: 5px;
+	content: "tag-col";
+}

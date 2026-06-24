@@ -88,6 +88,21 @@ type Return struct {
 	Value Expr
 }
 
+// Extend records an `@extend` (or `@extends`) request: the current rule's
+// selectors should be grafted onto every rule matching Target. Target is a raw
+// selector string, e.g. ".message" or a "$placeholder" name.
+type Extend struct {
+	Target string
+}
+
+// Import brings in another stylesheet. When Literal is true the import is left as
+// a verbatim `@import` in the output (CSS imports, url(), absolute URLs);
+// otherwise the referenced .styl file is parsed and inlined, sharing scope.
+type Import struct {
+	Path    string // the import argument with quotes stripped
+	Literal bool   // true => passthrough @import; false => inline a .styl file
+}
+
 func (*Stylesheet) stmtNode()  {}
 func (*RuleSet) stmtNode()     {}
 func (*Declaration) stmtNode() {}
@@ -97,6 +112,8 @@ func (*MixinCall) stmtNode()   {}
 func (*If) stmtNode()          {}
 func (*For) stmtNode()         {}
 func (*Return) stmtNode()      {}
+func (*Extend) stmtNode()      {}
+func (*Import) stmtNode()      {}
 
 // --- Expressions ---
 

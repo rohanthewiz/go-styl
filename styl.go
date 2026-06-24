@@ -8,6 +8,7 @@ package styl
 import (
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/rohanthewiz/go-styl/internal/eval"
 	"github.com/rohanthewiz/go-styl/internal/parser"
@@ -21,9 +22,13 @@ type Options struct {
 	// comma-separated selector group (scarlet's extra-compression pass). Off by
 	// default, since standard Stylus does not do this.
 	MergeDuplicates bool
-	// IncludePaths lists directories searched for @import (reserved for a later milestone).
+	// IncludePaths lists additional directories searched for @import.
 	IncludePaths []string
-	// Filename is the source path, used in error messages (optional).
+	// BaseDir is the directory that relative @import paths resolve against. When
+	// empty it defaults to the directory of Filename, or the process working
+	// directory if Filename is also unset.
+	BaseDir string
+	// Filename is the source path, used in error messages and to derive BaseDir.
 	Filename string
 }
 
@@ -33,9 +38,15 @@ func Compile(src string, opts Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	baseDir := opts.BaseDir
+	if baseDir == "" && opts.Filename != "" {
+		baseDir = filepath.Dir(opts.Filename)
+	}
 	return eval.Evaluate(sheet, eval.Options{
 		Pretty:          opts.Pretty,
 		MergeDuplicates: opts.MergeDuplicates,
+		BaseDir:         baseDir,
+		IncludePaths:    opts.IncludePaths,
 	})
 }
 

@@ -46,6 +46,31 @@ func TestLexBasics(t *testing.T) {
 	}
 }
 
+func TestLexInterpolation(t *testing.T) {
+	cases := []struct {
+		src  string
+		text string // expected text of the single IDENT token
+	}{
+		{"{x}", "{x}"},
+		{"col-{i}", "col-{i}"},
+		{"{prop}-top", "{prop}-top"},
+		{"a{b}c", "a{b}c"},
+		{"-{var}", "-{var}"},
+	}
+	for _, c := range cases {
+		toks, err := Lex(c.src, 1)
+		if err != nil {
+			t.Fatalf("Lex(%q): %v", c.src, err)
+		}
+		if len(toks) != 2 || toks[0].Kind != token.IDENT || toks[1].Kind != token.EOF {
+			t.Fatalf("Lex(%q) = %v, want [IDENT EOF]", c.src, kinds(toks))
+		}
+		if toks[0].Text != c.text {
+			t.Errorf("Lex(%q) text = %q, want %q", c.src, toks[0].Text, c.text)
+		}
+	}
+}
+
 func TestLexNumberUnit(t *testing.T) {
 	toks, err := Lex("10px", 1)
 	if err != nil {

@@ -4,11 +4,13 @@ package eval
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/rohanthewiz/go-styl/internal/ast"
 	"github.com/rohanthewiz/go-styl/internal/builtin"
 	"github.com/rohanthewiz/go-styl/internal/css"
+	"github.com/rohanthewiz/go-styl/internal/parser"
 	"github.com/rohanthewiz/go-styl/internal/token"
 	"github.com/rohanthewiz/go-styl/internal/value"
 )
@@ -17,11 +19,24 @@ import (
 type Options struct {
 	Pretty          bool
 	MergeDuplicates bool
+	BaseDir         string   // directory @import paths resolve against
+	IncludePaths    []string // extra directories searched for @import
+}
+
+// extendReq records a pending @extend: graft Extenders onto every rule matching
+// Target (a selector or "$placeholder" name).
+type extendReq struct {
+	extenders []string
+	target    string
 }
 
 type evaluator struct {
-	opts  Options
-	rules []*css.Rule // output rules in encounter order
+	opts         Options
+	rules        []*css.Rule          // output rules in encounter order
+	raws         []css.Node           // passthrough nodes (literal @imports), emitted first
+	placeholders map[string]*css.Rule // $name -> placeholder rule
+	extends      []extendReq
+	importing    map[string]bool // absolute paths currently being imported (cycle guard)
 }
 
 // execCtx captures where statements emit while a block executes: the active
@@ -32,29 +47,66 @@ type execCtx struct {
 	scope    *Scope
 	rule     *css.Rule
 	parents  []string
+	dir      string // directory @import paths in this block resolve against
 	ret      value.Value
 	returned bool
 }
 
 // Evaluate evaluates a stylesheet and returns the rendered CSS.
 func Evaluate(sheet *ast.Stylesheet, opts Options) (string, error) {
-	ev := &evaluator{opts: opts}
-	ctx := &execCtx{scope: NewScope()}
+	ev := &evaluator{
+		opts:         opts,
+		placeholders: map[string]*css.Rule{},
+		importing:    map[string]bool{},
+	}
+	ctx := &execCtx{scope: NewScope(), dir: opts.BaseDir}
 
 	if err := ev.execBlock(sheet.Statements, ctx); err != nil {
 		return "", err
 	}
+
+	ev.applyExtends()
 
 	rules := ev.rules
 	if opts.MergeDuplicates {
 		rules = css.MergeDuplicates(rules)
 	}
 
-	sheetOut := &css.Stylesheet{Nodes: make([]css.Node, 0, len(rules))}
+	// Passthrough @imports come first (CSS requires @import before other rules).
+	sheetOut := &css.Stylesheet{Nodes: make([]css.Node, 0, len(ev.raws)+len(rules))}
+	sheetOut.Nodes = append(sheetOut.Nodes, ev.raws...)
 	for _, r := range rules {
 		sheetOut.Nodes = append(sheetOut.Nodes, r)
 	}
 	return sheetOut.Render(opts.Pretty), nil
+}
+
+// applyExtends grafts each @extend's selectors onto every matching target rule.
+func (ev *evaluator) applyExtends() {
+	for _, ex := range ev.extends {
+		targets := ev.findExtendTargets(ex.target)
+		for _, t := range targets {
+			t.Extenders = append(t.Extenders, ex.extenders...)
+		}
+	}
+}
+
+// findExtendTargets returns the rules an @extend should attach to: the registered
+// placeholder for a "$name" target, otherwise every rule carrying that selector.
+func (ev *evaluator) findExtendTargets(target string) []*css.Rule {
+	if strings.HasPrefix(target, "$") {
+		if r, ok := ev.placeholders[target]; ok {
+			return []*css.Rule{r}
+		}
+		return nil
+	}
+	var out []*css.Rule
+	for _, r := range ev.rules {
+		if slices.Contains(r.Selectors, target) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // execBlock executes a list of statements within ctx, stopping early if a return
@@ -79,12 +131,16 @@ func (ev *evaluator) execStmt(stmt ast.Stmt, ctx *execCtx) error {
 		if ctx.rule == nil {
 			return fmt.Errorf("property %q must appear inside a selector", s.Property)
 		}
+		prop, err := ev.interpolate(s.Property, ctx.scope)
+		if err != nil {
+			return err
+		}
 		v, err := ev.evalExpr(s.Value, ctx.scope)
 		if err != nil {
 			return err
 		}
 		ctx.rule.Statements = append(ctx.rule.Statements, &css.Statement{
-			Property: s.Property,
+			Property: prop,
 			Value:    v.CSS(ev.opts.Pretty),
 		})
 		return nil
@@ -111,6 +167,10 @@ func (ev *evaluator) execStmt(stmt ast.Stmt, ctx *execCtx) error {
 		}
 		ctx.returned = true
 		return nil
+	case *ast.Extend:
+		return ev.evalExtend(s, ctx)
+	case *ast.Import:
+		return ev.evalImport(s, ctx)
 	default:
 		return fmt.Errorf("unsupported statement %T", stmt)
 	}
@@ -129,14 +189,33 @@ func (ev *evaluator) evalAssignment(a *ast.Assignment, scope *Scope) error {
 }
 
 // evalRuleSet resolves a ruleset's selectors against its parents, emits a rule
-// for its own declarations, and recurses into nested rulesets.
+// for its own declarations, and recurses into nested rulesets. Selectors carrying
+// `{...}` interpolation are resolved here; a `$name` selector marks a placeholder
+// rule (emitted only when extended).
 func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
-	combined := combineSelectors(ctx.parents, rs.Selectors, ev.opts.Pretty)
+	selfs := make([]string, len(rs.Selectors))
+	for i, s := range rs.Selectors {
+		r, err := ev.interpolate(s, ctx.scope)
+		if err != nil {
+			return err
+		}
+		selfs[i] = r
+	}
+	combined := combineSelectors(ctx.parents, selfs, ev.opts.Pretty)
 
-	rule := &css.Rule{Selector: joinSelectors(combined, ev.opts.Pretty)}
+	rule := &css.Rule{
+		Selector:  joinSelectors(combined, ev.opts.Pretty),
+		Selectors: combined,
+	}
+	if allPlaceholders(combined) {
+		rule.Placeholder = true
+		for _, s := range combined {
+			ev.placeholders[s] = rule
+		}
+	}
 	ev.rules = append(ev.rules, rule)
 
-	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined}
+	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, dir: ctx.dir}
 	if err := ev.execBlock(rs.Body, child); err != nil {
 		return err
 	}
@@ -280,7 +359,11 @@ func (ev *evaluator) evalExpr(e ast.Expr, scope *Scope) (value.Value, error) {
 	case *ast.ColorLit:
 		return value.ParseColor(x.Text)
 	case *ast.StringLit:
-		return &value.Str{Val: x.Value, Quote: x.Quote}, nil
+		val, err := ev.interpolate(x.Value, scope)
+		if err != nil {
+			return nil, err
+		}
+		return &value.Str{Val: val, Quote: x.Quote}, nil
 	case *ast.Ident:
 		// Boolean/null literals.
 		switch x.Name {
@@ -290,6 +373,22 @@ func (ev *evaluator) evalExpr(e ast.Expr, scope *Scope) (value.Value, error) {
 			return &value.Bool{Val: false}, nil
 		case "null":
 			return value.Null{}, nil
+		}
+		// Interpolated identifier: a lone `{expr}` yields the value itself; a mixed
+		// form like `Arial-{weight}` yields a substituted bare keyword.
+		if strings.Contains(x.Name, "{") {
+			if inner, ok := wholeInterp(x.Name); ok {
+				e, err := parser.ParseExpr(strings.TrimSpace(inner), 0)
+				if err != nil {
+					return nil, err
+				}
+				return ev.evalExpr(e, scope)
+			}
+			s, err := ev.interpolate(x.Name, scope)
+			if err != nil {
+				return nil, err
+			}
+			return &value.Ident{Name: s}, nil
 		}
 		// Variable reference inlines its value; otherwise it's a bare keyword.
 		if v, ok := scope.Get(x.Name); ok {

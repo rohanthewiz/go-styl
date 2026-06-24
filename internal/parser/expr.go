@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rohanthewiz/go-styl/internal/ast"
+	"github.com/rohanthewiz/go-styl/internal/lexer"
 	"github.com/rohanthewiz/go-styl/internal/token"
 )
 
@@ -20,6 +21,16 @@ type exprParser struct {
 	toks []token.Token
 	pos  int
 	line int
+}
+
+// ParseExpr lexes and parses a single value expression from raw source text. It
+// is the entry point used by the evaluator to resolve `{...}` interpolation.
+func ParseExpr(src string, line int) (ast.Expr, error) {
+	toks, err := lexer.Lex(src, line)
+	if err != nil {
+		return nil, err
+	}
+	return parseExpr(toks, line)
 }
 
 // parseExpr parses a value expression from toks (which must end with EOF).

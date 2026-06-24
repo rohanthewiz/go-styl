@@ -1,0 +1,26 @@
+// M4: interpolation, @extend, and $placeholder selectors.
+
+$rounded
+  border-radius 4px
+
+prefix = col
+
+// Interpolated selectors built inside a loop.
+for i in 1 2 3
+  .{prefix}-{i}
+    width i * 10px
+
+.message
+  padding 10px
+
+// @extend pulls in both a placeholder and a real rule.
+.card
+  @extend $rounded
+  @extend .message
+  color blue
+
+// Interpolation in a property name and inside a string value.
+side = left
+.box
+  margin-{side} 5px
+  content "tag-{prefix}"

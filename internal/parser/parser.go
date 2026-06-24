@@ -158,6 +158,24 @@ func parseLine(ln *line) (ast.Stmt, error) {
 
 	// --- Leaf lines ---
 
+	// @extend / @extends <selector-or-$placeholder>
+	if wordPrefix(text, "@extend") || wordPrefix(text, "@extends") {
+		kw := "@extend"
+		if wordPrefix(text, "@extends") {
+			kw = "@extends"
+		}
+		target := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(text[len(kw):]), ";"))
+		if target == "" {
+			return nil, fmt.Errorf("line %d: @extend requires a selector", ln.lineNo)
+		}
+		return &ast.Extend{Target: target}, nil
+	}
+
+	// @import <string | url(...)>
+	if wordPrefix(text, "@import") {
+		return parseImport(strings.TrimSpace(text[len("@import"):]), ln.lineNo)
+	}
+
 	// return [expr]
 	if wordPrefix(text, "return") {
 		rest := strings.TrimSpace(text[len("return"):])
@@ -244,6 +262,29 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		return nil, err
 	}
 	return &ast.Declaration{Property: toks[0].Text, Value: val}, nil
+}
+
+// parseImport parses the argument of an `@import` line. The argument is a quoted
+// path or a url(...). A `.css` path, an absolute URL, or a url(...) becomes a
+// literal passthrough import; any other path is inlined from a .styl file.
+func parseImport(rest string, lineNo int) (ast.Stmt, error) {
+	rest = strings.TrimSpace(strings.TrimSuffix(rest, ";"))
+	if rest == "" {
+		return nil, fmt.Errorf("line %d: @import requires a path", lineNo)
+	}
+	if strings.HasPrefix(strings.ToLower(rest), "url(") {
+		return &ast.Import{Path: rest, Literal: true}, nil
+	}
+
+	path := rest
+	if len(path) >= 2 && (path[0] == '"' || path[0] == '\'') && path[len(path)-1] == path[0] {
+		path = path[1 : len(path)-1]
+	}
+	low := strings.ToLower(path)
+	literal := strings.HasSuffix(low, ".css") ||
+		strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") ||
+		strings.HasPrefix(path, "//")
+	return &ast.Import{Path: path, Literal: literal}, nil
 }
 
 // splitSelectors splits a selector line on top-level commas.

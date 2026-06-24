@@ -51,11 +51,12 @@ func (l *lexer) run() error {
 		case unicode.IsDigit(c) || (c == '.' && l.peekIsDigit(1)):
 			l.scanNumber()
 
-		case isIdentStart(c):
+		case isIdentStart(c) || c == '{':
+			// '{' starts an interpolation that scanIdent folds into the token.
 			l.scanIdent()
 
-		case c == '-' && (isIdentLetter(l.peek(1)) || l.peek(1) == '-'):
-			// Leading-hyphen identifier: -webkit-box, --custom-prop.
+		case c == '-' && (isIdentLetter(l.peek(1)) || l.peek(1) == '-' || l.peek(1) == '{'):
+			// Leading-hyphen identifier: -webkit-box, --custom-prop, -{var}.
 			l.scanIdent()
 
 		default:
@@ -130,12 +131,42 @@ func (l *lexer) scanNumber() {
 	l.toks = append(l.toks, token.Token{Kind: token.NUMBER, Text: string(l.src[start:l.pos]), Line: l.line, Col: start + 1})
 }
 
+// scanIdent reads an identifier, folding any embedded `{...}` interpolation
+// groups into the token text (e.g. `col-{i}`, `{prop}-top`, or a bare `{x}`).
+// The braces are kept verbatim; the evaluator resolves them later.
 func (l *lexer) scanIdent() {
 	start := l.pos
-	for l.pos < len(l.src) && isIdentPart(l.src[l.pos]) {
-		l.pos++
+	for l.pos < len(l.src) {
+		c := l.src[l.pos]
+		switch {
+		case isIdentPart(c):
+			l.pos++
+		case c == '{':
+			l.skipInterp()
+		default:
+			l.toks = append(l.toks, token.Token{Kind: token.IDENT, Text: string(l.src[start:l.pos]), Line: l.line, Col: start + 1})
+			return
+		}
 	}
 	l.toks = append(l.toks, token.Token{Kind: token.IDENT, Text: string(l.src[start:l.pos]), Line: l.line, Col: start + 1})
+}
+
+// skipInterp advances past a balanced `{...}` interpolation group (nested braces
+// counted). An unterminated group is consumed to end-of-input.
+func (l *lexer) skipInterp() {
+	depth := 0
+	for l.pos < len(l.src) {
+		switch l.src[l.pos] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		}
+		l.pos++
+		if depth == 0 {
+			return
+		}
+	}
 }
 
 // scanOperator handles operators and punctuation, preferring two-character forms.

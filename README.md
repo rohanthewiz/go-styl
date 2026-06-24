@@ -24,6 +24,10 @@ Under active development. The compiler currently supports:
   `replace`/`split`/`uppercase`/…), and type (`typeof`/`unit`/`match`/`light`/`dark`),
   with CSS named-color support
 - Unknown functions pass through as literal CSS (`translateX(10px)`, `url(...)`)
+- **Interpolation** (`{expr}`) in selectors, property names, strings, and identifiers
+- **`@extend`** (and `@extends`) plus **`$placeholder`** selectors
+- **`@import`**: `.styl` files are inlined (sharing variables/mixins); `.css` and
+  `url(...)` imports pass through verbatim
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
 
 See [the roadmap](#roadmap) for what's next.
@@ -49,7 +53,9 @@ css, err := styl.Compile(src, styl.Options{Pretty: true})
 | --- | --- |
 | `Pretty` | Expanded, human-readable output (otherwise compressed). |
 | `MergeDuplicates` | Fold rules with identical bodies into one selector group. |
-| `IncludePaths` | Directories searched for `@import` (reserved). |
+| `IncludePaths` | Extra directories searched for `@import`. |
+| `BaseDir` | Directory relative `@import` paths resolve against (defaults to `Filename`'s dir). |
+| `Filename` | Source path, used in errors and to derive `BaseDir`. |
 
 ## CLI
 
@@ -111,7 +117,7 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] **M1** Vertical slice: lexer, parser, scoped evaluator, arithmetic, nesting, one builtin
 - [x] **M2** Control flow (`if`/`else`/`for`) and parametric functions & mixins
 - [x] **M3** Built-in function library (color / math / list / string / type)
-- [ ] **M4** Interpolation, `@extend` / placeholder selectors, `@import`
+- [x] **M4** Interpolation (`{expr}`), `@extend` / `$placeholder` selectors, `@import`
 - [ ] **M5** At-rules (`@media`, `@keyframes`, …), compress parity, brace syntax, sourcemaps
 
 ## License
