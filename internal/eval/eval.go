@@ -137,8 +137,9 @@ func (ev *evaluator) execStmt(stmt ast.Stmt, ctx *execCtx) error {
 			return err
 		}
 		ctx.rule.Statements = append(ctx.rule.Statements, &css.Statement{
-			Property: prop,
-			Value:    v.CSS(ev.opts.Pretty),
+			Property:  prop,
+			Value:     v.CSS(ev.opts.Pretty),
+			Important: s.Important,
 		})
 		return nil
 	case *ast.RuleSet:

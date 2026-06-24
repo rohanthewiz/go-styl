@@ -267,11 +267,26 @@ func parseLine(ln *line) (ast.Stmt, error) {
 	if valToks[0].Kind == token.COLON {
 		valToks = valToks[1:]
 	}
+	valToks, important := stripImportant(valToks)
 	val, err := parseExpr(valToks, ln.lineNo)
 	if err != nil {
 		return nil, err
 	}
-	return &ast.Declaration{Property: toks[0].Text, Value: val}, nil
+	return &ast.Declaration{Property: toks[0].Text, Value: val, Important: important}, nil
+}
+
+// stripImportant removes a trailing `!important` (lexed as NOT IDENT("important"))
+// from a declaration's value tokens, reporting whether it was present. The
+// terminating EOF token is preserved.
+func stripImportant(toks []token.Token) ([]token.Token, bool) {
+	n := len(toks)
+	if n >= 3 && toks[n-1].Kind == token.EOF &&
+		toks[n-2].Kind == token.IDENT && strings.EqualFold(toks[n-2].Text, "important") &&
+		toks[n-3].Kind == token.NOT {
+		trimmed := append(toks[:n-3:n-3], toks[n-1])
+		return trimmed, true
+	}
+	return toks, false
 }
 
 // parseAtRule parses an at-rule line into an ast.AtRule, splitting the header into
@@ -324,16 +339,46 @@ func parseImport(rest string, lineNo int) (ast.Stmt, error) {
 	return &ast.Import{Path: path, Literal: literal}, nil
 }
 
-// splitSelectors splits a selector line on top-level commas.
-// NOTE: this does not yet account for commas inside brackets/strings,
-// e.g. a[href$="a,b"]; that is a known limitation tracked for a later milestone.
+// splitSelectors splits a selector line on top-level commas, ignoring commas
+// inside brackets, parentheses, or string literals (e.g. a[href$="a,b"] or
+// :not(.x, .y) stay intact).
 func splitSelectors(text string) []string {
-	parts := strings.Split(text, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if s := strings.TrimSpace(p); s != "" {
+	var out []string
+	var cur strings.Builder
+	var quote rune // 0 when not inside a string
+	depth := 0     // () and [] nesting
+
+	flush := func() {
+		if s := strings.TrimSpace(cur.String()); s != "" {
 			out = append(out, s)
 		}
+		cur.Reset()
 	}
+
+	for _, c := range text {
+		switch {
+		case quote != 0:
+			cur.WriteRune(c)
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+			cur.WriteRune(c)
+		case c == '(' || c == '[':
+			depth++
+			cur.WriteRune(c)
+		case c == ')' || c == ']':
+			if depth > 0 {
+				depth--
+			}
+			cur.WriteRune(c)
+		case c == ',' && depth == 0:
+			flush()
+		default:
+			cur.WriteRune(c)
+		}
+	}
+	flush()
 	return out
 }

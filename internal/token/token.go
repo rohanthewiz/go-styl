@@ -54,11 +54,12 @@ const (
 
 // Token is a single lexical token with source position.
 type Token struct {
-	Kind  Kind
-	Text  string // literal text (numbers keep their unit; strings drop quotes)
-	Quote rune   // original quote rune for STRING tokens ('"' or '\''), else 0
-	Line  int    // 1-based source line
-	Col   int    // 1-based source column
+	Kind        Kind
+	Text        string // literal text (numbers keep their unit; strings drop quotes)
+	Quote       rune   // original quote rune for STRING tokens ('"' or '\''), else 0
+	Line        int    // 1-based source line
+	Col         int    // 1-based source column
+	SpaceBefore bool   // whitespace immediately preceded this token
 }
 
 var kindNames = map[Kind]string{

@@ -71,6 +71,39 @@ func TestLexInterpolation(t *testing.T) {
 	}
 }
 
+func TestLexRawCalls(t *testing.T) {
+	cases := []string{
+		"url(/img/x.png)",
+		"url(\"/f.woff2\")",
+		"calc(100% - 20px)",
+		"calc(100% - {g})",
+	}
+	for _, src := range cases {
+		toks, err := Lex(src, 1)
+		if err != nil {
+			t.Fatalf("Lex(%q): %v", src, err)
+		}
+		if len(toks) != 2 || toks[0].Kind != token.IDENT || toks[0].Text != src {
+			t.Errorf("Lex(%q) = %v (text %q), want single IDENT", src, kinds(toks), toks[0].Text)
+		}
+	}
+}
+
+func TestLexSpaceBefore(t *testing.T) {
+	// "10px -5px": the '-' is preceded by a space, the '5px' is not.
+	toks, err := Lex("10px -5px", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// NUMBER MINUS NUMBER EOF
+	if toks[1].Kind != token.MINUS || !toks[1].SpaceBefore {
+		t.Errorf("MINUS SpaceBefore = %v, want true", toks[1].SpaceBefore)
+	}
+	if toks[2].Kind != token.NUMBER || toks[2].SpaceBefore {
+		t.Errorf("NUMBER SpaceBefore = %v, want false", toks[2].SpaceBefore)
+	}
+}
+
 func TestLexNumberUnit(t *testing.T) {
 	toks, err := Lex("10px", 1)
 	if err != nil {

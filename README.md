@@ -29,8 +29,12 @@ Under active development. The compiler currently supports:
 - **`@extend`** (and `@extends`) plus **`$placeholder`** selectors
 - **`@import`**: `.styl` files are inlined (sharing variables/mixins); `.css` and
   `url(...)` imports pass through verbatim
-- **At-rules**: `@media` / `@supports` (with selector bubbling), `@keyframes`,
-  `@font-face`, and verbatim passthrough for leaf at-rules (`@charset`, …)
+- **At-rules**: `@media` / `@supports` (with selector bubbling and variables in
+  queries), `@keyframes`, `@font-face`, and verbatim passthrough for leaf at-rules
+  (`@charset`, …)
+- Literal **`url()`** and **`calc()`** (operators/paths preserved; `{interp}` still
+  resolves), **`!important`**, and whitespace-sensitive unary `-`/`+`
+  (`margin 10px -5px` is a list; `10px - 5px` subtracts)
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
 
 See [the roadmap](#roadmap) for what's next.
@@ -122,7 +126,9 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] **M3** Built-in function library (color / math / list / string / type)
 - [x] **M4** Interpolation (`{expr}`), `@extend` / `$placeholder` selectors, `@import`
 - [x] **M5** At-rules (`@media` / `@keyframes` / `@font-face` / …), brace syntax, compress parity
-- [ ] **M6** Source maps; deeper compress parity and remaining edge cases
+- [x] **M6a** Correctness: `url()`/`calc()`, `!important`, media-query variables,
+  bracket-aware selector splitting, whitespace-sensitive `-`/`+`
+- [ ] **M6b** Source maps; deeper compress parity and remaining edge cases
 
 ## License
 

@@ -27,7 +27,24 @@ func Lex(s string, line int) ([]token.Token, error) {
 	if err := l.run(); err != nil {
 		return nil, err
 	}
+	setSpacing(l.toks)
 	return l.toks, nil
+}
+
+// setSpacing marks each token with whether whitespace preceded it, derived from
+// the gap between adjacent token columns. This drives whitespace-sensitive
+// disambiguation of unary vs binary '-'/'+'.
+func setSpacing(toks []token.Token) {
+	prevEnd := 1
+	for i := range toks {
+		t := &toks[i]
+		t.SpaceBefore = t.Col > prevEnd
+		end := t.Col + len([]rune(t.Text))
+		if t.Kind == token.STRING {
+			end += 2 // Text has the surrounding quotes stripped
+		}
+		prevEnd = end
+	}
 }
 
 func (l *lexer) run() error {
@@ -50,6 +67,11 @@ func (l *lexer) run() error {
 
 		case unicode.IsDigit(c) || (c == '.' && l.peekIsDigit(1)):
 			l.scanNumber()
+
+		case l.atRawCall():
+			// url(...) and calc(...) are captured verbatim so slashes, operators,
+			// and units inside survive untouched (interpolation still resolves).
+			l.scanRawCall()
 
 		case isIdentStart(c) || c == '{':
 			// '{' starts an interpolation that scanIdent folds into the token.
@@ -134,6 +156,59 @@ func (l *lexer) scanNumber() {
 // scanIdent reads an identifier, folding any embedded `{...}` interpolation
 // groups into the token text (e.g. `col-{i}`, `{prop}-top`, or a bare `{x}`).
 // The braces are kept verbatim; the evaluator resolves them later.
+// rawCallNames are functions whose argument list is kept as a literal token
+// rather than parsed as an expression (so url(/a.png) and calc(100% - 2px) work).
+var rawCallNames = map[string]bool{"url": true, "calc": true}
+
+// atRawCall reports whether the lexer is positioned at the start of a raw-call
+// name (url/calc, case-insensitive) immediately followed by '('.
+func (l *lexer) atRawCall() bool {
+	start := l.pos
+	i := start
+	for i < len(l.src) && isIdentLetter(l.src[i]) {
+		i++
+	}
+	if i == start || i >= len(l.src) || l.src[i] != '(' {
+		return false
+	}
+	return rawCallNames[strings.ToLower(string(l.src[start:i]))]
+}
+
+// scanRawCall consumes `name( ... )` with balanced parentheses (strings honored)
+// and emits it as a single IDENT token carrying the verbatim text.
+func (l *lexer) scanRawCall() {
+	start := l.pos
+	for l.pos < len(l.src) && l.src[l.pos] != '(' {
+		l.pos++
+	}
+	depth := 0
+	for l.pos < len(l.src) {
+		c := l.src[l.pos]
+		if c == '"' || c == '\'' {
+			quote := c
+			l.pos++
+			for l.pos < len(l.src) && l.src[l.pos] != quote {
+				if l.src[l.pos] == '\\' && l.pos+1 < len(l.src) {
+					l.pos++
+				}
+				l.pos++
+			}
+			l.pos++ // closing quote
+			continue
+		}
+		l.pos++
+		if c == '(' {
+			depth++
+		} else if c == ')' {
+			depth--
+			if depth == 0 {
+				break
+			}
+		}
+	}
+	l.toks = append(l.toks, token.Token{Kind: token.IDENT, Text: string(l.src[start:l.pos]), Line: l.line, Col: start + 1})
+}
+
 func (l *lexer) scanIdent() {
 	start := l.pos
 	for l.pos < len(l.src) {

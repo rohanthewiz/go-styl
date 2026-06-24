@@ -1,0 +1,19 @@
+// M6a: correctness fixes — url()/calc(), !important, media variables,
+// bracket-aware selector splitting, and whitespace-sensitive -/+.
+
+gutter = 20px
+bp = 768px
+
+a[href$="a,b"], :not(.x, .y)
+  color red
+
+.panel
+  background url(/img/bg.png) no-repeat
+  width calc(100% - {gutter})
+  margin 10px -5px
+  padding 10px - 5px
+  color black !important
+
+@media screen and (min-width: bp)
+  .panel
+    width calc(100% - 40px)

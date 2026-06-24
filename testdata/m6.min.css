@@ -1,0 +1,1 @@
+a[href$="a,b"],:not(.x, .y){color:red}.panel{background:url(/img/bg.png) no-repeat;width:calc(100% - 20px);margin:10px -5px;padding:5px;color:black!important}@media screen and (min-width:768px){.panel{width:calc(100% - 40px)}}

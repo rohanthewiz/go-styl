@@ -12,8 +12,9 @@ type Node interface {
 
 // Statement is a single resolved CSS declaration, e.g. {Property:"color", Value:"#000"}.
 type Statement struct {
-	Property string
-	Value    string
+	Property  string
+	Value     string
+	Important bool
 }
 
 // Rule is a resolved CSS rule: a fully-qualified selector plus its declarations.
@@ -122,6 +123,13 @@ func (rule *Rule) Render(out *strings.Builder, pretty bool) {
 			out.WriteByte(' ')
 		}
 		out.WriteString(st.Value)
+		if st.Important {
+			if pretty {
+				out.WriteString(" !important")
+			} else {
+				out.WriteString("!important")
+			}
+		}
 
 		// Compressed output omits the final semicolon.
 		if pretty || i != len(rule.Statements)-1 {

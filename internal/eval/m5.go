@@ -34,8 +34,63 @@ func (ev *evaluator) evalAtRule(s *ast.AtRule, ctx *execCtx) error {
 	case "keyframes":
 		return ev.evalKeyframes(header, s.Body, ctx)
 	default:
+		// Evaluate bare variables inside the query (e.g. min-width: bp).
+		params = ev.evalAtVars(params, ctx.scope)
+		header = "@" + s.Name
+		if params != "" {
+			header += " " + params
+		}
 		return ev.evalAtNested(header, s.Body, ctx)
 	}
+}
+
+// evalAtVars substitutes identifiers that resolve to defined variables with their
+// value inside the parenthesised parts of an at-rule query, so a media feature
+// value can reference a Stylus variable directly (`@media (min-width: bp)`).
+// Identifiers outside parentheses (media types/operators like screen, and) are
+// left untouched.
+func (ev *evaluator) evalAtVars(params string, scope *Scope) string {
+	runes := []rune(params)
+	var b strings.Builder
+	depth := 0
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		switch c {
+		case '(':
+			depth++
+			b.WriteRune(c)
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			b.WriteRune(c)
+		default:
+			if depth > 0 && isIdentLead(c) {
+				j := i
+				for j < len(runes) && isIdentRune(runes[j]) {
+					j++
+				}
+				word := string(runes[i:j])
+				if v, ok := scope.Get(word); ok {
+					b.WriteString(v.CSS(ev.opts.Pretty))
+				} else {
+					b.WriteString(word)
+				}
+				i = j - 1
+			} else {
+				b.WriteRune(c)
+			}
+		}
+	}
+	return b.String()
+}
+
+func isIdentLead(c rune) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$'
+}
+
+func isIdentRune(c rune) bool {
+	return isIdentLead(c) || (c >= '0' && c <= '9') || c == '-'
 }
 
 // evalAtDeclBlock renders an at-rule whose body is a set of declarations, e.g.
@@ -103,10 +158,17 @@ func (ev *evaluator) compactAtHeader(header string) string {
 		case ')':
 			depth--
 		case ' ':
-			// Drop a space that follows ':' or ',' inside parentheses.
-			if depth > 0 && b.Len() > 0 {
-				if prev := b.String()[b.Len()-1]; prev == ':' || prev == ',' {
+			// Drop a space after ',' (query-list separator) anywhere, and after
+			// ':' inside parentheses (a feature test); keep spaces around media
+			// operators like `and`.
+			if b.Len() > 0 {
+				switch b.String()[b.Len()-1] {
+				case ',':
 					continue
+				case ':':
+					if depth > 0 {
+						continue
+					}
 				}
 			}
 		}

@@ -86,12 +86,12 @@ func (p *exprParser) parseSpaceList() (ast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !startsTerm(p.cur().Kind) {
+	if !startsTerm(p.cur().Kind) && !p.unaryPos(p.pos) {
 		return first, nil
 	}
 
 	items := []ast.Expr{first}
-	for startsTerm(p.cur().Kind) {
+	for startsTerm(p.cur().Kind) || p.unaryPos(p.pos) {
 		it, err := p.parseBinary(0)
 		if err != nil {
 			return nil, err
@@ -99,6 +99,22 @@ func (p *exprParser) parseSpaceList() (ast.Expr, error) {
 		items = append(items, it)
 	}
 	return &ast.List{Items: items, Comma: false}, nil
+}
+
+// unaryPos reports whether the operator at index i is a sign-prefix that begins a
+// new space-list term rather than a binary operator. Stylus distinguishes these
+// by whitespace: `10px -5px` (space before, none after) is a two-item list, while
+// `10px - 5px` (space both sides) and `10px-5px` (none) are subtraction.
+func (p *exprParser) unaryPos(i int) bool {
+	k := p.toks[i].Kind
+	if k != token.MINUS && k != token.PLUS {
+		return false
+	}
+	if !p.toks[i].SpaceBefore || i+1 >= len(p.toks) {
+		return false
+	}
+	nxt := p.toks[i+1]
+	return !nxt.SpaceBefore && startsTerm(nxt.Kind)
 }
 
 // parseBinary is precedence-climbing over infix operators.
@@ -109,6 +125,11 @@ func (p *exprParser) parseBinary(minBP int) (ast.Expr, error) {
 	}
 
 	for {
+		// A sign-prefixed term (e.g. the `-5px` in `10px -5px`) ends this binary
+		// expression so the space-list loop can pick it up as a new item.
+		if p.unaryPos(p.pos) {
+			break
+		}
 		bp := infixBP(p.cur().Kind)
 		if bp == 0 || bp < minBP {
 			break

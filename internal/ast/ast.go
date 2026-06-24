@@ -28,8 +28,9 @@ type RuleSet struct {
 
 // Declaration is a CSS property assignment, e.g. `color blue` or `width base * 2`.
 type Declaration struct {
-	Property string
-	Value    Expr
+	Property  string
+	Value     Expr
+	Important bool // trailing !important
 }
 
 // Assignment binds a variable, e.g. `base = 10px` or `x ?= 1`.
