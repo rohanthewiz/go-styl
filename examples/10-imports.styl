@@ -1,0 +1,12 @@
+// @import: a `.css` (or url()/absolute) import passes through verbatim and is
+// hoisted to the top; a `.styl` import is inlined, sharing its variables/mixins.
+
+@import "reset.css"            // passthrough -> `@import "reset.css";`
+@import "imports/_theme"       // inlined -> brings in primary/danger/radius/button
+
+.btn-primary
+  button(primary)
+
+.btn-danger
+  button(danger)
+  font-weight bold

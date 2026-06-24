@@ -1,0 +1,25 @@
+// Interpolation `{expr}` substitutes a value into selectors, property names,
+// strings, and identifiers.
+
+prefix = icon
+size = 24px
+side = left
+
+// Selector interpolation (great inside loops).
+for name in home search user
+  .{prefix}-{name}
+    background-image url("/icons/{name}.svg")
+    width size
+    height size
+
+// Property-name interpolation.
+.spacer
+  margin-{side} 16px          // -> margin-left
+  padding-{side} 8px          // -> padding-left
+
+// String interpolation and identifier interpolation.
+weight = bold
+.label
+  content "id-{prefix}"       // -> "id-icon"
+  font-family Arial-{weight}  // -> Arial-bold  (mixed identifier)
+  z-index {size}              // -> 24  (a lone {expr} yields the value)

@@ -1,0 +1,22 @@
+// Variables, conditional assignment, and unit-aware arithmetic.
+// Variables are inlined at compile time (no CSS custom properties are emitted).
+
+font-stack = "Helvetica Neue", Arial, sans-serif
+base = 16px
+ratio = 1.5
+
+// `?=` only assigns when the name is not already defined.
+base ?= 12px        // ignored: base is already 16px
+accent ?= #3498db   // applied: accent was undefined
+
+body
+  font-family font-stack
+  font-size base
+  line-height base * ratio   // 24px
+  margin base / 2 base       // 8px 16px  (a space-separated list)
+  color accent
+
+h1
+  // Arithmetic carries units; mixing compatible units works.
+  font-size base + 0.5rem    // unit comes from the left operand
+  padding 1em 2em

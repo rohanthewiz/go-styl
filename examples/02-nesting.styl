@@ -1,0 +1,33 @@
+// Nesting with the `&` parent reference, pseudo-classes, and combinators.
+
+nav
+  background #222
+
+  // Descendant: `nav ul`
+  ul
+    margin 0
+    padding 0
+    list-style none
+
+  // `&` attaches directly to the parent: `nav a`, `nav a:hover`
+  a
+    color #ddd
+    text-decoration none
+
+    &:hover
+      color white
+
+    // `&` can also build compound class variants: `nav a.active`
+    &.active
+      font-weight bold
+
+  // Child combinator: `nav > .brand`
+  > .brand
+    font-size 20px
+
+// Comma groups distribute over the nesting too.
+h1, h2, h3
+  font-family sans-serif
+
+  small
+    font-weight normal

@@ -1,0 +1,24 @@
+// The same language, written in CSS-like brace/semicolon syntax. go-styl detects
+// the braces and normalizes them before parsing, so every feature still works.
+
+accent = #e91e63;
+radius = 6px;
+
+.button {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: radius;
+  background: accent;
+  color: white !important;
+
+  &:hover { background: darken(accent, 10%); }
+
+  .icon {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@media (min-width: 600px) {
+  .button { padding: 10px 20px; }
+}

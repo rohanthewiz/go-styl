@@ -1,0 +1,36 @@
+// A tour of the built-in function library: color, math, list, string, and type.
+
+brand = #3498db
+
+.colors
+  color brand
+  background lighten(brand, 20%)
+  border-color darken(brand, 15%)
+  outline-color mix(brand, white, 25%)      // 25% brand, 75% white
+  box-shadow-color rgba(brand, 0.4)         // set alpha on an existing color
+  accent complement(brand)                  // opposite hue
+  channel-red red(brand)                    // 52
+  is-light light(brand)                     // true
+
+.math
+  z-index ceil(4.2)                          // 5
+  opacity round(0.7)                         // 1
+  scale pow(2, 8)                            // 256
+  width max(50px, 320px, 25px)               // 320px
+  ratio percentage(0.25)                     // 25%
+
+.lists
+  // length / index / join operate on space- or comma-separated lists.
+  count length(1px 2px 3px)                  // 3
+  position index(a b c, b)                   // 1
+  joined join("-", foo bar baz)              // foo-bar-baz
+
+.strings
+  label unquote("data-id")                   // data-id  (drops the quotes)
+  upper uppercase("go")                      // "GO"
+  slice substr("stylus", 0, 4)               // "styl"
+
+.types
+  kind typeof(10px)                          // unit
+  the-unit unit(10px)                        // px
+  retyped unit(10, "em")                     // 10em

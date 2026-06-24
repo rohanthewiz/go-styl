@@ -1,0 +1,35 @@
+// Functions return values; mixins emit declarations/rules. They share definition
+// syntax — how a callee is used at the call site decides which it is.
+
+// Single-line function: returns a value.
+double(n) = n * 2
+
+// Block function with an explicit return.
+golden(n)
+  return n * 1.618
+
+// Mixin (block form): its body is emitted into the caller.
+size(w, h = w)        // `h` defaults to `w`
+  width w
+  height h
+
+// Mixin that emits nested rules against the caller's selector.
+clearfix()
+  &::after
+    content ""
+    display block
+    clear both
+
+// Rest parameters collect the remaining arguments as a list.
+stack(props...)
+  transition props
+
+.box
+  size(40px)            // h defaults to 40px -> width: 40px; height: 40px
+  font-size double(8px) // 16px  (function call in a value)
+  margin golden(10px)   // 16.18px
+  clearfix()            // emits .box::after
+  stack(color 0.2s, transform 0.3s)
+
+.banner
+  +size(100%, 200px)    // mixins may also be called with a leading `+`

@@ -1,0 +1,28 @@
+// Conditionals (if / else if / else / unless) and `for … in` loops.
+
+theme = dark
+columns = 4
+
+body
+  if theme == dark
+    background #111
+    color #eee
+  else if theme == light
+    background white
+    color #111
+  else
+    background gray
+
+  // `unless` is the negation of `if`.
+  unless theme == light
+    border-color #333
+
+// Build a set of column helpers with a loop and interpolation.
+for i in 1 2 3 4
+  .col-{i}
+    width (100% / columns) * i
+
+// `for key, val in list` exposes the index as the first variable.
+for idx, shade in #eee #ccc #999
+  .swatch-{idx}
+    background shade

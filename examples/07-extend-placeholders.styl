@@ -1,0 +1,27 @@
+// @extend grafts a rule's selector onto another rule's selector group.
+// $placeholder selectors define reusable rule bodies that are only emitted when
+// extended (they never appear on their own).
+
+// A placeholder: not emitted unless something extends it.
+$card
+  border 1px solid #ddd
+  border-radius 4px
+  padding 16px
+
+// A normal rule that will also be extended.
+.message
+  padding 12px
+  border-radius 4px
+
+.note
+  @extend $card           // pulls in the placeholder's body
+  background #fafafa
+
+.warning
+  @extend .message        // adds `.warning` to `.message`'s selector group
+  color #b00
+
+.error
+  @extends .message       // `@extends` is an accepted alias
+  color #d00
+  font-weight bold

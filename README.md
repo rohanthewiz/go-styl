@@ -106,6 +106,34 @@ body a:hover {
 }
 ```
 
+## Examples
+
+The [`examples/`](examples/) directory holds runnable, feature-by-feature samples
+(variables, nesting, mixins, control flow, built-ins, interpolation, `@extend`,
+at-rules, brace syntax, and `@import`). Compile any of them:
+
+```shell
+go run ./cmd/styl examples/08-at-rules.styl
+go run ./cmd/styl -compress examples/05-builtins.styl
+```
+
+See [`examples/README.md`](examples/README.md) for the full index.
+
+## Limitations
+
+Things to be aware of (some are tracked for [M6b](#roadmap)):
+
+- **No source maps yet.**
+- Inside `url(...)` and `calc(...)`, bare Stylus variables are *not* evaluated —
+  use interpolation: `calc(100% - {gutter})`. (`@media` query values *are*
+  evaluated: `@media (min-width: bp)`.)
+- Arithmetic in a `@media` query needs interpolation: `@media (min-width: {bp * 2})`.
+- In brace syntax, a stand-alone `{expr}` in value position is not supported —
+  use the bare variable (`width x`, not `width {x}`).
+- The `MergeDuplicates` pass is a non-standard extra-compression option (off by
+  default); standard Stylus does not fold identical rule bodies.
+- Errors are reported with line numbers but without source-map-grade positions.
+
 ## Architecture
 
 ```

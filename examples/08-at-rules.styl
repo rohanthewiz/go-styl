@@ -1,0 +1,39 @@
+// At-rules: @media (with variable queries and selector bubbling), @keyframes,
+// @font-face, and verbatim passthrough for leaf at-rules.
+
+@charset "utf-8"
+
+bp-tablet = 768px
+bp-desktop = 1024px
+
+.container
+  width 100%
+  margin 0 auto
+
+  // A nested @media bubbles the `.container` selector inside the media block.
+  @media (min-width: bp-tablet)
+    width 720px
+
+  @media (min-width: bp-desktop)
+    width 960px
+
+// Top-level @media wrapping whole rulesets.
+@media print
+  body
+    color black
+  .no-print
+    display none
+
+@font-face
+  font-family "Inter"
+  font-style normal
+  src url("/fonts/inter.woff2") format("woff2")
+
+@keyframes fade-in
+  from
+    opacity 0
+  to
+    opacity 1
+
+.toast
+  animation fade-in 0.3s ease-out
