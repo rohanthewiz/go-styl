@@ -17,7 +17,12 @@ Under active development. The compiler currently supports:
 - **Control flow**: `if` / `else if` / `else` / `unless`, and `for … in` loops
 - User-defined **functions** (return values) and **mixins** (emit declarations/rules),
   with default and rest (`args…`) parameters, in single-line and block forms
-- **Built-in functions** (currently `rgb`, `rgba`, `unit`; full library in progress)
+- **Built-in functions** across color (`rgb`/`rgba`/`hsl`/`hsla`/`lighten`/`darken`/
+  `saturate`/`mix`/`tint`/`shade`/`complement`/`invert`/`hue`/`alpha`/…), math
+  (`abs`/`ceil`/`floor`/`round`/`min`/`max`/`pow`/`percentage`/…), list
+  (`length`/`push`/`index`/`last`/`join`/…), string (`unquote`/`quote`/`s`/`substr`/
+  `replace`/`split`/`uppercase`/…), and type (`typeof`/`unit`/`match`/`light`/`dark`),
+  with CSS named-color support
 - Unknown functions pass through as literal CSS (`translateX(10px)`, `url(...)`)
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
 
@@ -105,7 +110,7 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 
 - [x] **M1** Vertical slice: lexer, parser, scoped evaluator, arithmetic, nesting, one builtin
 - [x] **M2** Control flow (`if`/`else`/`for`) and parametric functions & mixins
-- [ ] **M3** Full built-in function library (color / math / list / string / type)
+- [x] **M3** Built-in function library (color / math / list / string / type)
 - [ ] **M4** Interpolation, `@extend` / placeholder selectors, `@import`
 - [ ] **M5** At-rules (`@media`, `@keyframes`, …), compress parity, brace syntax, sourcemaps
 

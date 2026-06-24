@@ -1,6 +1,7 @@
-// Package builtin holds the registry of built-in Stylus functions. M1 ships a
-// minimal set (rgba, unit) to exercise the function-call path end to end; the
-// full color/math/list/string library arrives in M3.
+// Package builtin holds the registry of built-in Stylus functions, organized by
+// category (color.go, math.go, list.go, string.go, type.go). Each category file
+// registers its functions via init(); this file holds the registry and the
+// argument helpers shared across categories.
 package builtin
 
 import (
@@ -12,12 +13,11 @@ import (
 // Func is a built-in function implementation.
 type Func func(args []value.Value) (value.Value, error)
 
-// Registry maps function names to their implementations.
-var Registry = map[string]Func{
-	"rgba": rgba,
-	"rgb":  rgb,
-	"unit": unit,
-}
+// Registry maps function names to their implementations. Categories populate it
+// through register() in their init() functions.
+var Registry = map[string]Func{}
+
+func register(name string, f Func) { Registry[name] = f }
 
 // Lookup returns the built-in for name, if any.
 func Lookup(name string) (Func, bool) {
@@ -25,81 +25,64 @@ func Lookup(name string) (Func, bool) {
 	return f, ok
 }
 
-func rgba(args []value.Value) (value.Value, error) {
-	if len(args) != 4 {
-		return nil, fmt.Errorf("rgba() expects 4 arguments, got %d", len(args))
+// --- argument helpers ---
+
+// wantArgs verifies an exact argument count.
+func wantArgs(fn string, args []value.Value, n int) error {
+	if len(args) != n {
+		return fmt.Errorf("%s() expects %d argument(s), got %d", fn, n, len(args))
 	}
-	r, err := channel(args[0], "rgba")
-	if err != nil {
-		return nil, err
-	}
-	g, err := channel(args[1], "rgba")
-	if err != nil {
-		return nil, err
-	}
-	b, err := channel(args[2], "rgba")
-	if err != nil {
-		return nil, err
-	}
-	a, ok := args[3].(*value.Number)
-	if !ok {
-		return nil, fmt.Errorf("rgba() alpha must be a number, got %s", args[3].TypeName())
-	}
-	return &value.Color{R: r, G: g, B: b, A: clampAlpha(a.Num)}, nil
+	return nil
 }
 
-func rgb(args []value.Value) (value.Value, error) {
-	if len(args) != 3 {
-		return nil, fmt.Errorf("rgb() expects 3 arguments, got %d", len(args))
+// argNum extracts arg i as a Number.
+func argNum(fn string, args []value.Value, i int) (*value.Number, error) {
+	n, ok := args[i].(*value.Number)
+	if !ok {
+		return nil, fmt.Errorf("%s() argument %d must be a number, got %s", fn, i+1, args[i].TypeName())
 	}
-	r, err := channel(args[0], "rgb")
-	if err != nil {
-		return nil, err
-	}
-	g, err := channel(args[1], "rgb")
-	if err != nil {
-		return nil, err
-	}
-	b, err := channel(args[2], "rgb")
-	if err != nil {
-		return nil, err
-	}
-	return &value.Color{R: r, G: g, B: b, A: 1}, nil
+	return n, nil
 }
 
-func unit(args []value.Value) (value.Value, error) {
-	if len(args) != 2 {
-		return nil, fmt.Errorf("unit() expects 2 arguments, got %d", len(args))
-	}
-	n, ok := args[0].(*value.Number)
+// argColor extracts arg i as a color, accepting Color values and color keywords
+// (e.g. the ident `blue`).
+func argColor(fn string, args []value.Value, i int) (*value.Color, error) {
+	c, ok := toColor(args[i])
 	if !ok {
-		return nil, fmt.Errorf("unit() first argument must be a number, got %s", args[0].TypeName())
+		return nil, fmt.Errorf("%s() argument %d must be a color, got %s", fn, i+1, args[i].TypeName())
 	}
-	var u string
-	switch x := args[1].(type) {
-	case *value.Str:
-		u = x.Val
+	return c, nil
+}
+
+// toColor coerces a value to a Color: Color values pass through and color
+// keywords (idents) are looked up in the CSS named-color table.
+func toColor(v value.Value) (*value.Color, bool) {
+	switch x := v.(type) {
+	case *value.Color:
+		return x, true
 	case *value.Ident:
-		u = x.Name
-	default:
-		return nil, fmt.Errorf("unit() second argument must be a string, got %s", args[1].TypeName())
+		return value.LookupNamedColor(x.Name)
 	}
-	return &value.Number{Num: n.Num, Unit: u}, nil
+	return nil, false
 }
 
-func channel(v value.Value, fn string) (uint8, error) {
-	n, ok := v.(*value.Number)
-	if !ok {
-		return 0, fmt.Errorf("%s() channel must be a number, got %s", fn, v.TypeName())
+// fraction interprets a number as a fraction: a `%` value is divided by 100,
+// a bare value is taken as-is (so both `20%` and `0.2` mean 0.2).
+func fraction(n *value.Number) float64 {
+	if n.Unit == "%" {
+		return n.Num / 100
 	}
-	x := n.Num
+	return n.Num
+}
+
+func clampByte(x float64) uint8 {
 	if x < 0 {
 		x = 0
 	}
 	if x > 255 {
 		x = 255
 	}
-	return uint8(x + 0.5), nil
+	return uint8(x + 0.5)
 }
 
 func clampAlpha(a float64) float64 {
