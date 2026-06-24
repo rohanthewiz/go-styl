@@ -1,0 +1,27 @@
+// M5: at-rules (@media with bubbling, @keyframes, @font-face, leaf passthrough).
+
+@charset "utf-8"
+
+bp = 768px
+
+@media (min-width: {bp})
+  .container
+    width 750px
+    .row
+      margin 0 auto
+
+.card
+  color black
+  // A nested @media bubbles the .card selector inside the media block.
+  @media print
+    color gray
+
+@font-face
+  font-family "My Font"
+  src url("/fonts/my.woff2")
+
+@keyframes spin
+  from
+    transform rotate(0deg)
+  to
+    transform rotate(360deg)

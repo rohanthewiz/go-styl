@@ -32,8 +32,8 @@ type extendReq struct {
 
 type evaluator struct {
 	opts         Options
-	rules        []*css.Rule          // output rules in encounter order
-	raws         []css.Node           // passthrough nodes (literal @imports), emitted first
+	out          []css.Node           // top-level output nodes in encounter order
+	rules        []*css.Rule          // every rule created (any nesting), for @extend lookup
 	placeholders map[string]*css.Rule // $name -> placeholder rule
 	extends      []extendReq
 	importing    map[string]bool // absolute paths currently being imported (cycle guard)
@@ -47,7 +47,8 @@ type execCtx struct {
 	scope    *Scope
 	rule     *css.Rule
 	parents  []string
-	dir      string // directory @import paths in this block resolve against
+	sink     *[]css.Node // where rulesets/at-rules in this block are emitted
+	dir      string      // directory @import paths in this block resolve against
 	ret      value.Value
 	returned bool
 }
@@ -60,6 +61,7 @@ func Evaluate(sheet *ast.Stylesheet, opts Options) (string, error) {
 		importing:    map[string]bool{},
 	}
 	ctx := &execCtx{scope: NewScope(), dir: opts.BaseDir}
+	ctx.sink = &ev.out
 
 	if err := ev.execBlock(sheet.Statements, ctx); err != nil {
 		return "", err
@@ -67,17 +69,12 @@ func Evaluate(sheet *ast.Stylesheet, opts Options) (string, error) {
 
 	ev.applyExtends()
 
-	rules := ev.rules
+	nodes := ev.out
 	if opts.MergeDuplicates {
-		rules = css.MergeDuplicates(rules)
+		nodes = css.MergeDuplicates(nodes)
 	}
 
-	// Passthrough @imports come first (CSS requires @import before other rules).
-	sheetOut := &css.Stylesheet{Nodes: make([]css.Node, 0, len(ev.raws)+len(rules))}
-	sheetOut.Nodes = append(sheetOut.Nodes, ev.raws...)
-	for _, r := range rules {
-		sheetOut.Nodes = append(sheetOut.Nodes, r)
-	}
+	sheetOut := &css.Stylesheet{Nodes: nodes}
 	return sheetOut.Render(opts.Pretty), nil
 }
 
@@ -171,6 +168,8 @@ func (ev *evaluator) execStmt(stmt ast.Stmt, ctx *execCtx) error {
 		return ev.evalExtend(s, ctx)
 	case *ast.Import:
 		return ev.evalImport(s, ctx)
+	case *ast.AtRule:
+		return ev.evalAtRule(s, ctx)
 	default:
 		return fmt.Errorf("unsupported statement %T", stmt)
 	}
@@ -213,9 +212,10 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 			ev.placeholders[s] = rule
 		}
 	}
+	*ctx.sink = append(*ctx.sink, rule)
 	ev.rules = append(ev.rules, rule)
 
-	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, dir: ctx.dir}
+	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, sink: ctx.sink, dir: ctx.dir}
 	if err := ev.execBlock(rs.Body, child); err != nil {
 		return err
 	}
@@ -278,19 +278,31 @@ func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 	if err != nil {
 		return err
 	}
-	_, err = ev.invoke(cl, args, ctx.rule, ctx.parents)
+	_, err = ev.invoke(cl, args, ctx)
 	return err
 }
 
-// invoke runs a closure's body. emitRule/emitParents are the caller's emission
-// context for mixin (statement) use; pass nil for a pure function (expression)
-// call. The return value is the body's `return` value, or Null if none.
-func (ev *evaluator) invoke(cl *Closure, args []value.Value, emitRule *css.Rule, emitParents []string) (value.Value, error) {
+// invoke runs a closure's body. emit carries the caller's emission context (rule,
+// selectors, sink, dir) so a mixin's declarations and nested rulesets land in the
+// caller's output; pass nil for a pure function (expression) call. The return
+// value is the body's `return` value, or Null if none.
+func (ev *evaluator) invoke(cl *Closure, args []value.Value, emit *execCtx) (value.Value, error) {
 	fscope := cl.Scope.Child()
 	if err := ev.bindParams(fscope, cl.Def.Params, args); err != nil {
 		return nil, err
 	}
-	fctx := &execCtx{scope: fscope, rule: emitRule, parents: emitParents}
+	fctx := &execCtx{scope: fscope}
+	if emit != nil {
+		fctx.rule = emit.rule
+		fctx.parents = emit.parents
+		fctx.sink = emit.sink
+		fctx.dir = emit.dir
+	} else {
+		// Pure function call: rulesets are unexpected, but route any to a scratch
+		// sink so emission never dereferences a nil pointer.
+		var scratch []css.Node
+		fctx.sink = &scratch
+	}
 	if err := ev.execBlock(cl.Def.Body, fctx); err != nil {
 		return nil, err
 	}
@@ -505,7 +517,7 @@ func (ev *evaluator) evalCall(c *ast.Call, scope *Scope) (value.Value, error) {
 
 	// User-defined function takes precedence (it can shadow a built-in).
 	if cl, ok := scope.GetFunc(c.Name); ok {
-		return ev.invoke(cl, args, nil, nil)
+		return ev.invoke(cl, args, nil)
 	}
 
 	if fn, ok := builtin.Lookup(c.Name); ok {

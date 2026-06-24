@@ -1,0 +1,18 @@
+body {
+	color: red;
+	font-size: 20px;
+}
+
+body a {
+	color: blue;
+}
+
+body a:hover {
+	color: green;
+}
+
+@media (min-width: 10px) {
+	.box {
+		width: 100px;
+	}
+}

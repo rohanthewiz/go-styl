@@ -1,0 +1,17 @@
+// M5: CSS-like brace/semicolon syntax (normalized to indentation before parsing).
+
+base = 10px;
+
+body {
+  color: red;
+  font-size: base * 2;
+
+  a {
+    color: blue;
+    &:hover { color: green; }
+  }
+}
+
+@media (min-width: {base}) {
+  .box { width: 100px; }
+}

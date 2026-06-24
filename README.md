@@ -10,6 +10,7 @@ A pure-Go compiler for the [Stylus](https://stylus-lang.com/) (`.styl`) CSS prep
 
 Under active development. The compiler currently supports:
 
+- Both the **indentation syntax** and the CSS-like **brace/semicolon syntax**
 - Indentation-based nesting with `&` parent references and pseudo-class attachment
 - Compile-time **variables** (inlined, with lexical scoping) and `?=` conditional assignment
 - Unit-aware **arithmetic** (`+ - * / %`) and comparisons
@@ -28,6 +29,8 @@ Under active development. The compiler currently supports:
 - **`@extend`** (and `@extends`) plus **`$placeholder`** selectors
 - **`@import`**: `.styl` files are inlined (sharing variables/mixins); `.css` and
   `url(...)` imports pass through verbatim
+- **At-rules**: `@media` / `@supports` (with selector bubbling), `@keyframes`,
+  `@font-face`, and verbatim passthrough for leaf at-rules (`@charset`, …)
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
 
 See [the roadmap](#roadmap) for what's next.
@@ -102,10 +105,10 @@ body a:hover {
 ## Architecture
 
 ```
-.styl  →  parser (indentation line-tree + Pratt expression parser)
+.styl  →  parser (brace→indent normalize, indentation line-tree + Pratt expr parser)
        →  ast
-       →  eval (lexical scope, variable inlining, arithmetic, builtins)
-       →  css (rule tree → render, optional duplicate merge)
+       →  eval (lexical scope, variable inlining, arithmetic, builtins, at-rules)
+       →  css (node tree → render, optional duplicate merge)
        →  CSS
 ```
 
@@ -118,7 +121,8 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] **M2** Control flow (`if`/`else`/`for`) and parametric functions & mixins
 - [x] **M3** Built-in function library (color / math / list / string / type)
 - [x] **M4** Interpolation (`{expr}`), `@extend` / `$placeholder` selectors, `@import`
-- [ ] **M5** At-rules (`@media`, `@keyframes`, …), compress parity, brace syntax, sourcemaps
+- [x] **M5** At-rules (`@media` / `@keyframes` / `@font-face` / …), brace syntax, compress parity
+- [ ] **M6** Source maps; deeper compress parity and remaining edge cases
 
 ## License
 

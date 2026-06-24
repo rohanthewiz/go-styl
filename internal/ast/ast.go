@@ -103,6 +103,16 @@ type Import struct {
 	Literal bool   // true => passthrough @import; false => inline a .styl file
 }
 
+// AtRule is a block or leaf at-rule (@media, @keyframes, @font-face, @supports,
+// @charset, …). Name is the keyword without '@' (e.g. "media"); Params is the raw
+// text after it (e.g. "(min-width: 768px)"). Body is nil for leaf at-rules, which
+// render as a verbatim passthrough line.
+type AtRule struct {
+	Name   string
+	Params string
+	Body   []Stmt
+}
+
 func (*Stylesheet) stmtNode()  {}
 func (*RuleSet) stmtNode()     {}
 func (*Declaration) stmtNode() {}
@@ -114,6 +124,7 @@ func (*For) stmtNode()         {}
 func (*Return) stmtNode()      {}
 func (*Extend) stmtNode()      {}
 func (*Import) stmtNode()      {}
+func (*AtRule) stmtNode()      {}
 
 // --- Expressions ---
 

@@ -25,6 +25,11 @@ type line struct {
 
 // Parse parses Stylus source into a Stylesheet AST.
 func Parse(src string) (*ast.Stylesheet, error) {
+	// Brace/semicolon syntax is normalized into the indentation form first.
+	if usesBraces(src) {
+		src = bracesToIndent(src)
+	}
+
 	roots, err := buildTree(src)
 	if err != nil {
 		return nil, err
@@ -129,7 +134,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 	// --- Block lines (have an indented body) ---
 	if len(ln.children) > 0 {
 		if strings.HasPrefix(text, "@") {
-			return nil, fmt.Errorf("line %d: at-rules are not supported yet", ln.lineNo)
+			return parseAtRule(ln)
 		}
 		if wordPrefix(text, "for") {
 			return parseFor(ln)
@@ -174,6 +179,11 @@ func parseLine(ln *line) (ast.Stmt, error) {
 	// @import <string | url(...)>
 	if wordPrefix(text, "@import") {
 		return parseImport(strings.TrimSpace(text[len("@import"):]), ln.lineNo)
+	}
+
+	// Any other leaf at-rule (@charset, @namespace, …) passes through verbatim.
+	if strings.HasPrefix(text, "@") {
+		return parseAtRule(ln)
 	}
 
 	// return [expr]
@@ -262,6 +272,33 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		return nil, err
 	}
 	return &ast.Declaration{Property: toks[0].Text, Value: val}, nil
+}
+
+// parseAtRule parses an at-rule line into an ast.AtRule, splitting the header into
+// the at-keyword (without '@') and its raw parameters. Any indented children form
+// the body; a childless at-rule has a nil body (rendered as a passthrough line).
+func parseAtRule(ln *line) (ast.Stmt, error) {
+	head := strings.TrimRight(ln.text, ";")
+	// The keyword runs from '@' up to the first space (vendor hyphens included).
+	i := 1
+	for i < len(head) && head[i] != ' ' && head[i] != '\t' {
+		i++
+	}
+	name := head[1:i]
+	if name == "" {
+		return nil, fmt.Errorf("line %d: empty at-rule", ln.lineNo)
+	}
+	params := strings.TrimSpace(head[i:])
+
+	at := &ast.AtRule{Name: name, Params: params}
+	if len(ln.children) > 0 {
+		body, err := parseBlock(ln.children)
+		if err != nil {
+			return nil, err
+		}
+		at.Body = body
+	}
+	return at, nil
 }
 
 // parseImport parses the argument of an `@import` line. The argument is a quoted

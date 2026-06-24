@@ -21,17 +21,24 @@ func statementsHash(rule *Rule) uint64 {
 	return h.Sum64()
 }
 
-// MergeDuplicates folds rules that share an identical declaration body into a
-// single rule with a comma-separated selector group. This is the optional
+// MergeDuplicates folds top-level rules that share an identical declaration body
+// into a single rule with a comma-separated selector group. This is the optional
 // compression pass inherited from scarlet; standard Stylus output leaves it off.
+// At-rule blocks and other non-rule nodes pass through untouched (their nested
+// rules are not merged).
 //
 //	a { color: blue }
 //	p { color: blue }  =>  a, p { color: blue }
-func MergeDuplicates(rules []*Rule) []*Rule {
-	result := make([]*Rule, 0, len(rules))
+func MergeDuplicates(nodes []Node) []Node {
+	result := make([]Node, 0, len(nodes))
 	seen := map[uint64]*Rule{}
 
-	for _, rule := range rules {
+	for _, n := range nodes {
+		rule, ok := n.(*Rule)
+		if !ok {
+			result = append(result, n)
+			continue
+		}
 		h := statementsHash(rule)
 		if existing, ok := seen[h]; ok {
 			existing.Duplicates = append(existing.Duplicates, rule)

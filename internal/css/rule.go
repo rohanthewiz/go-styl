@@ -69,11 +69,11 @@ func (rule *Rule) renderSelectors(pretty bool) string {
 	return strings.Join(sels, sep)
 }
 
-// AtRule is a block at-rule such as @media or @supports whose body is a set of
-// nested rules (e.g. "@media (min-width: 900px) { ... }").
+// AtRule is a block at-rule such as @media, @supports, or @keyframes whose body is
+// a set of nested nodes (e.g. "@media (min-width: 900px) { ... }").
 type AtRule struct {
 	Header string // e.g. "@media all and (min-width: 900px)"
-	Rules  []*Rule
+	Nodes  []Node // nested rules (and possibly nested at-rules)
 }
 
 // Stylesheet is the top-level ordered collection of output nodes.
@@ -138,8 +138,18 @@ func (rule *Rule) Render(out *strings.Builder, pretty bool) {
 	}
 }
 
-// Render renders a block at-rule and its nested rules.
+// Render renders a block at-rule and its nested nodes. An at-rule whose nested
+// nodes produce no output (e.g. all-empty rules) is skipped entirely.
 func (a *AtRule) Render(out *strings.Builder, pretty bool) {
+	var inner strings.Builder
+	for _, n := range a.Nodes {
+		n.Render(&inner, pretty)
+	}
+	body := inner.String()
+	if strings.TrimSpace(body) == "" {
+		return
+	}
+
 	out.WriteString(a.Header)
 	if pretty {
 		out.WriteByte(' ')
@@ -147,12 +157,27 @@ func (a *AtRule) Render(out *strings.Builder, pretty bool) {
 	out.WriteByte('{')
 	if pretty {
 		out.WriteByte('\n')
+		// Indent the already-rendered nested block by one level.
+		body = indentBlock(body)
 	}
-	for _, r := range a.Rules {
-		r.Render(out, pretty)
-	}
+	out.WriteString(body)
 	out.WriteByte('}')
 	if pretty {
 		out.WriteByte('\n')
 	}
+}
+
+// indentBlock prefixes each non-empty line of an already-rendered block with a tab
+// so nested rules sit one level inside their at-rule in pretty output.
+func indentBlock(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	var b strings.Builder
+	for _, ln := range lines {
+		if ln != "" {
+			b.WriteByte('\t')
+			b.WriteString(ln)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }

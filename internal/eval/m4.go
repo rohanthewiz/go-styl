@@ -121,7 +121,7 @@ func (ev *evaluator) evalExtend(s *ast.Extend, ctx *execCtx) error {
 // current scope (so its variables and mixins are shared).
 func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 	if s.Literal {
-		ev.raws = append(ev.raws, &css.RawNode{Text: importStmt(s.Path)})
+		*ctx.sink = append(*ctx.sink, &css.RawNode{Text: importStmt(s.Path)})
 		return nil
 	}
 
