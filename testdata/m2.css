@@ -1,0 +1,15 @@
+body {
+	width: 30px;
+	padding: 5px;
+	margin: 0;
+	background: black;
+	color: white;
+}
+
+a {
+	padding: 2px;
+	margin: 0;
+	border-width: 1px;
+	border-width: 2px;
+	border-width: 3px;
+}

@@ -1,0 +1,22 @@
+double(n) = n * 2
+
+box(pad = 5px)
+  padding pad
+  margin 0
+
+theme = dark
+
+body
+  width double(15px)
+  box()
+
+  if theme == dark
+    background black
+    color white
+  else
+    background white
+
+a
+  box(2px)
+  for w in 1 2 3
+    border-width w * 1px
