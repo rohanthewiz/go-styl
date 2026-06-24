@@ -24,6 +24,7 @@ type Stylesheet struct {
 type RuleSet struct {
 	Selectors []string // raw selector strings, e.g. ["a", "p"] or ["&:hover"]
 	Body      []Stmt
+	Line, Col int // 1-based source position of the selector line
 }
 
 // Declaration is a CSS property assignment, e.g. `color blue` or `width base * 2`.
@@ -31,6 +32,7 @@ type Declaration struct {
 	Property  string
 	Value     Expr
 	Important bool // trailing !important
+	Line, Col int  // 1-based source position
 }
 
 // Assignment binds a variable, e.g. `base = 10px` or `x ?= 1`.
@@ -109,9 +111,10 @@ type Import struct {
 // text after it (e.g. "(min-width: 768px)"). Body is nil for leaf at-rules, which
 // render as a verbatim passthrough line.
 type AtRule struct {
-	Name   string
-	Params string
-	Body   []Stmt
+	Name      string
+	Params    string
+	Body      []Stmt
+	Line, Col int // 1-based source position
 }
 
 func (*Stylesheet) stmtNode()  {}

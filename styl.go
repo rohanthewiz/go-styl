@@ -30,6 +30,9 @@ type Options struct {
 	BaseDir string
 	// Filename is the source path, used in error messages and to derive BaseDir.
 	Filename string
+	// OutFile is the generated CSS filename recorded in a source map's "file"
+	// field (optional; used by CompileMap/CompileFileMap).
+	OutFile string
 }
 
 // Compile compiles Stylus source to CSS.
@@ -48,6 +51,46 @@ func Compile(src string, opts Options) (string, error) {
 		BaseDir:         baseDir,
 		IncludePaths:    opts.IncludePaths,
 	})
+}
+
+// CompileMap compiles Stylus source to CSS and also returns a Source Map v3
+// document (JSON) mapping output positions back to the source. The original
+// source is embedded in the map (sourcesContent) so it is self-contained.
+func CompileMap(src string, opts Options) (cssOut, mapJSON string, err error) {
+	sheet, err := parser.Parse(src)
+	if err != nil {
+		return "", "", err
+	}
+	baseDir := opts.BaseDir
+	if baseDir == "" && opts.Filename != "" {
+		baseDir = filepath.Dir(opts.Filename)
+	}
+	source := opts.Filename
+	if source == "" {
+		source = "input.styl"
+	}
+	return eval.EvaluateMap(sheet, eval.Options{
+		Pretty:          opts.Pretty,
+		MergeDuplicates: opts.MergeDuplicates,
+		BaseDir:         baseDir,
+		IncludePaths:    opts.IncludePaths,
+		SourceFile:      source,
+		SourceContent:   src,
+		OutFile:         opts.OutFile,
+	})
+}
+
+// CompileFileMap compiles the Stylus file at path, returning CSS and its source
+// map. Filename (used for the map's "sources") defaults to path.
+func CompileFileMap(path string, opts Options) (cssOut, mapJSON string, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+	if opts.Filename == "" {
+		opts.Filename = path
+	}
+	return CompileMap(string(data), opts)
 }
 
 // CompileReader compiles Stylus source read from r.

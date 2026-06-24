@@ -158,7 +158,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ast.RuleSet{Selectors: splitSelectors(text), Body: body}, nil
+		return &ast.RuleSet{Selectors: splitSelectors(text), Body: body, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
 	// --- Leaf lines ---
@@ -272,7 +272,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ast.Declaration{Property: toks[0].Text, Value: val, Important: important}, nil
+	return &ast.Declaration{Property: toks[0].Text, Value: val, Important: important, Line: ln.lineNo, Col: ln.indent + 1}, nil
 }
 
 // stripImportant removes a trailing `!important` (lexed as NOT IDENT("important"))
@@ -305,7 +305,7 @@ func parseAtRule(ln *line) (ast.Stmt, error) {
 	}
 	params := strings.TrimSpace(head[i:])
 
-	at := &ast.AtRule{Name: name, Params: params}
+	at := &ast.AtRule{Name: name, Params: params, Line: ln.lineNo, Col: ln.indent + 1}
 	if len(ln.children) > 0 {
 		body, err := parseBlock(ln.children)
 		if err != nil {

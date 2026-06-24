@@ -5,9 +5,12 @@ package css
 
 import "strings"
 
-// Node is anything that can render itself into the output stream.
+// Node is anything that can render itself into the output stream. hasOutput
+// reports whether it would emit anything (used to skip empty rules/at-rules and to
+// place blank-line separators).
 type Node interface {
-	Render(out *strings.Builder, pretty bool)
+	Render(p *Printer)
+	hasOutput() bool
 }
 
 // Statement is a single resolved CSS declaration, e.g. {Property:"color", Value:"#000"}.
@@ -15,6 +18,7 @@ type Statement struct {
 	Property  string
 	Value     string
 	Important bool
+	Pos       Pos
 }
 
 // Rule is a resolved CSS rule: a fully-qualified selector plus its declarations.
@@ -32,6 +36,7 @@ type Rule struct {
 	Duplicates  []*Rule
 	Placeholder bool
 	Extenders   []string
+	Pos         Pos
 }
 
 // RawNode is a verbatim line emitted as-is, used for passthrough at-rules such as
@@ -40,11 +45,13 @@ type RawNode struct {
 	Text string
 }
 
+func (r *RawNode) hasOutput() bool { return strings.TrimSpace(r.Text) != "" }
+
 // Render writes the raw text followed by a newline in pretty mode.
-func (r *RawNode) Render(out *strings.Builder, pretty bool) {
-	out.WriteString(r.Text)
-	if pretty {
-		out.WriteByte('\n')
+func (r *RawNode) Render(p *Printer) {
+	p.write(r.Text)
+	if p.pretty {
+		p.write("\n")
 	}
 }
 
@@ -75,6 +82,7 @@ func (rule *Rule) renderSelectors(pretty bool) string {
 type AtRule struct {
 	Header string // e.g. "@media all and (min-width: 900px)"
 	Nodes  []Node // nested rules (and possibly nested at-rules)
+	Pos    Pos
 }
 
 // Stylesheet is the top-level ordered collection of output nodes.
@@ -84,108 +92,99 @@ type Stylesheet struct {
 
 // Render renders the whole stylesheet, trimming a trailing blank line in pretty mode.
 func (s *Stylesheet) Render(pretty bool) string {
-	out := strings.Builder{}
-	for _, n := range s.Nodes {
-		n.Render(&out, pretty)
-	}
-	return strings.TrimRight(out.String(), "\n")
+	return RenderSheet(s.Nodes, pretty, nil)
 }
 
-// Render renders a single CSS rule. Rules with no declarations are skipped so
-// that bare nesting containers don't emit empty `{}` blocks. Unextended
-// placeholder rules render nothing.
-func (rule *Rule) Render(out *strings.Builder, pretty bool) {
-	if len(rule.Statements) == 0 {
+// hasOutput reports whether the rule emits anything (it is skipped when it has no
+// declarations or is an unextended placeholder).
+func (rule *Rule) hasOutput() bool {
+	return len(rule.Statements) > 0 && rule.renderSelectors(false) != ""
+}
+
+// Render renders a single CSS rule at the printer's current depth.
+func (rule *Rule) Render(p *Printer) {
+	if !rule.hasOutput() {
 		return
 	}
 
-	selectors := rule.renderSelectors(pretty)
-	if selectors == "" {
-		return
+	p.tabs(p.depth)
+	p.mark(rule.Pos)
+	p.write(rule.renderSelectors(p.pretty))
+	if p.pretty {
+		p.write(" ")
 	}
-	out.WriteString(selectors)
-
-	if pretty {
-		out.WriteByte(' ')
-	}
-	out.WriteByte('{')
-	if pretty {
-		out.WriteByte('\n')
+	p.write("{")
+	if p.pretty {
+		p.write("\n")
 	}
 
 	for i, st := range rule.Statements {
-		if pretty {
-			out.WriteByte('\t')
+		p.tabs(p.depth + 1)
+		p.mark(st.Pos)
+		p.write(st.Property)
+		p.write(":")
+		if p.pretty {
+			p.write(" ")
 		}
-		out.WriteString(st.Property)
-		out.WriteByte(':')
-		if pretty {
-			out.WriteByte(' ')
-		}
-		out.WriteString(st.Value)
+		p.write(st.Value)
 		if st.Important {
-			if pretty {
-				out.WriteString(" !important")
+			if p.pretty {
+				p.write(" !important")
 			} else {
-				out.WriteString("!important")
+				p.write("!important")
 			}
 		}
-
 		// Compressed output omits the final semicolon.
-		if pretty || i != len(rule.Statements)-1 {
-			out.WriteByte(';')
+		if p.pretty || i != len(rule.Statements)-1 {
+			p.write(";")
 		}
-		if pretty {
-			out.WriteByte('\n')
+		if p.pretty {
+			p.write("\n")
 		}
 	}
 
-	out.WriteByte('}')
-	if pretty {
-		out.WriteString("\n\n")
+	p.tabs(p.depth)
+	p.write("}")
+	if p.pretty {
+		p.write("\n")
 	}
 }
 
-// Render renders a block at-rule and its nested nodes. An at-rule whose nested
-// nodes produce no output (e.g. all-empty rules) is skipped entirely.
-func (a *AtRule) Render(out *strings.Builder, pretty bool) {
-	var inner strings.Builder
+// hasOutput reports whether any nested node would render output.
+func (a *AtRule) hasOutput() bool {
 	for _, n := range a.Nodes {
-		n.Render(&inner, pretty)
+		if n.hasOutput() {
+			return true
+		}
 	}
-	body := inner.String()
-	if strings.TrimSpace(body) == "" {
+	return false
+}
+
+// Render renders a block at-rule and its nested nodes (indented one level deeper).
+// An at-rule whose body produces no output is skipped entirely.
+func (a *AtRule) Render(p *Printer) {
+	if !a.hasOutput() {
 		return
 	}
 
-	out.WriteString(a.Header)
-	if pretty {
-		out.WriteByte(' ')
+	p.tabs(p.depth)
+	p.mark(a.Pos)
+	p.write(a.Header)
+	if p.pretty {
+		p.write(" ")
 	}
-	out.WriteByte('{')
-	if pretty {
-		out.WriteByte('\n')
-		// Indent the already-rendered nested block by one level.
-		body = indentBlock(body)
+	p.write("{")
+	if p.pretty {
+		p.write("\n")
 	}
-	out.WriteString(body)
-	out.WriteByte('}')
-	if pretty {
-		out.WriteByte('\n')
-	}
-}
 
-// indentBlock prefixes each non-empty line of an already-rendered block with a tab
-// so nested rules sit one level inside their at-rule in pretty output.
-func indentBlock(s string) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	var b strings.Builder
-	for _, ln := range lines {
-		if ln != "" {
-			b.WriteByte('\t')
-			b.WriteString(ln)
-		}
-		b.WriteByte('\n')
+	p.depth++
+	renderNodes(p, a.Nodes)
+	p.depth--
+
+	p.tabs(p.depth)
+	p.write("}")
+	if p.pretty {
+		p.write("\n")
 	}
-	return b.String()
 }

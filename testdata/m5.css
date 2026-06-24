@@ -1,4 +1,5 @@
 @charset "utf-8";
+
 @media (min-width: 768px) {
 	.container {
 		width: 750px;
@@ -8,6 +9,7 @@
 		margin: 0 auto;
 	}
 }
+
 .card {
 	color: black;
 }
@@ -17,6 +19,7 @@
 		color: gray;
 	}
 }
+
 @font-face {
 	font-family: "My Font";
 	src: url("/fonts/my.woff2");

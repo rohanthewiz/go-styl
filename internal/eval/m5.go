@@ -23,6 +23,8 @@ func (ev *evaluator) evalAtRule(s *ast.AtRule, ctx *execCtx) error {
 		header += " " + params
 	}
 
+	pos := css.Pos{Line: s.Line, Col: s.Col}
+
 	if s.Body == nil {
 		*ctx.sink = append(*ctx.sink, &css.RawNode{Text: header + ";"})
 		return nil
@@ -30,9 +32,9 @@ func (ev *evaluator) evalAtRule(s *ast.AtRule, ctx *execCtx) error {
 
 	switch atKind(s.Name) {
 	case "font-face", "page", "viewport":
-		return ev.evalAtDeclBlock(header, s.Body, ctx)
+		return ev.evalAtDeclBlock(header, s.Body, ctx, pos)
 	case "keyframes":
-		return ev.evalKeyframes(header, s.Body, ctx)
+		return ev.evalKeyframes(header, s.Body, ctx, pos)
 	default:
 		// Evaluate bare variables inside the query (e.g. min-width: bp).
 		params = ev.evalAtVars(params, ctx.scope)
@@ -40,7 +42,7 @@ func (ev *evaluator) evalAtRule(s *ast.AtRule, ctx *execCtx) error {
 		if params != "" {
 			header += " " + params
 		}
-		return ev.evalAtNested(header, s.Body, ctx)
+		return ev.evalAtNested(header, s.Body, ctx, pos)
 	}
 }
 
@@ -95,8 +97,8 @@ func isIdentRune(c rune) bool {
 
 // evalAtDeclBlock renders an at-rule whose body is a set of declarations, e.g.
 // @font-face. The header itself stands in for the selector.
-func (ev *evaluator) evalAtDeclBlock(header string, body []ast.Stmt, ctx *execCtx) error {
-	rule := &css.Rule{Selector: header, Selectors: []string{header}}
+func (ev *evaluator) evalAtDeclBlock(header string, body []ast.Stmt, ctx *execCtx, pos css.Pos) error {
+	rule := &css.Rule{Selector: header, Selectors: []string{header}, Pos: pos}
 	*ctx.sink = append(*ctx.sink, rule)
 	ev.rules = append(ev.rules, rule)
 
@@ -106,8 +108,8 @@ func (ev *evaluator) evalAtDeclBlock(header string, body []ast.Stmt, ctx *execCt
 
 // evalKeyframes renders @keyframes: its frame selectors (0%, from, to, …) are
 // emitted as-is, never combined with an enclosing selector.
-func (ev *evaluator) evalKeyframes(header string, body []ast.Stmt, ctx *execCtx) error {
-	atr := &css.AtRule{Header: header}
+func (ev *evaluator) evalKeyframes(header string, body []ast.Stmt, ctx *execCtx, pos css.Pos) error {
+	atr := &css.AtRule{Header: header, Pos: pos}
 	*ctx.sink = append(*ctx.sink, atr)
 
 	child := &execCtx{scope: ctx.scope.Child(), sink: &atr.Nodes, dir: ctx.dir}
@@ -117,13 +119,13 @@ func (ev *evaluator) evalKeyframes(header string, body []ast.Stmt, ctx *execCtx)
 // evalAtNested renders @media/@supports-style blocks. When nested inside a
 // selector, the enclosing selectors bubble inward so bare declarations attach to
 // them (Stylus media bubbling).
-func (ev *evaluator) evalAtNested(header string, body []ast.Stmt, ctx *execCtx) error {
-	atr := &css.AtRule{Header: ev.compactAtHeader(header)}
+func (ev *evaluator) evalAtNested(header string, body []ast.Stmt, ctx *execCtx, pos css.Pos) error {
+	atr := &css.AtRule{Header: ev.compactAtHeader(header), Pos: pos}
 	*ctx.sink = append(*ctx.sink, atr)
 
 	child := &execCtx{scope: ctx.scope.Child(), parents: ctx.parents, sink: &atr.Nodes, dir: ctx.dir}
 	if len(ctx.parents) > 0 {
-		rule := &css.Rule{Selector: joinSelectors(ctx.parents, ev.opts.Pretty), Selectors: ctx.parents}
+		rule := &css.Rule{Selector: joinSelectors(ctx.parents, ev.opts.Pretty), Selectors: ctx.parents, Pos: pos}
 		*child.sink = append(*child.sink, rule)
 		ev.rules = append(ev.rules, rule)
 		child.rule = rule

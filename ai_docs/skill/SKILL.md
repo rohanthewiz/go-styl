@@ -41,6 +41,16 @@ css, err := styl.CompileReader(r, styl.Options{})        // r is an io.Reader
 All three return `(string, error)`. On a parse/eval error the error carries the
 1-based source line, e.g. `line 7: undefined mixin "foo"`.
 
+**Source maps** (Source Map v3) — `CompileMap`/`CompileFileMap` return the CSS plus
+a JSON map (selectors, declarations, and at-rule headers map back to the `.styl`,
+column-accurate, including compressed output). The original source is embedded
+(`sourcesContent`), so the map is self-contained.
+
+```go
+css, mapJSON, err := styl.CompileMap(src, styl.Options{Filename: "app.styl", OutFile: "app.css"})
+css, mapJSON, err := styl.CompileFileMap("app.styl", styl.Options{OutFile: "app.css"})
+```
+
 `Options`:
 
 | Field | Type | Meaning |
@@ -58,7 +68,11 @@ go run ./cmd/styl input.styl              # pretty CSS to stdout
 go run ./cmd/styl -compress input.styl    # minified
 go run ./cmd/styl -merge input.styl       # merge duplicate rule bodies
 go run ./cmd/styl -o out.css input.styl   # write to a file
+go run ./cmd/styl -o out.css -sourcemap input.styl  # also writes out.css.map
 ```
+
+`-sourcemap` requires `-o`; it writes `<out>.map` and appends a
+`/*# sourceMappingURL=… */` comment to the CSS.
 
 ---
 
@@ -372,7 +386,8 @@ Inside `url(...)` and `calc(...)` bare variables are **not** evaluated — use
 
 ## 14. Gotchas / limitations
 
-- **No source maps** yet.
+- Source maps map at selector / declaration / at-rule granularity (not yet inside
+  individual values).
 - Variables inside `url()`/`calc()` need `{interpolation}`; arithmetic in `@media`
   queries needs `{ }`.
 - Brace syntax: a stand-alone `{expr}` value isn't supported — use the bare

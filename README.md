@@ -36,6 +36,8 @@ Under active development. The compiler currently supports:
   resolves), **`!important`**, and whitespace-sensitive unary `-`/`+`
   (`margin 10px -5px` is a list; `10px - 5px` subtracts)
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
+- **Source maps** (Source Map v3) mapping selectors and declarations back to the
+  `.styl` source
 
 See [the roadmap](#roadmap) for what's next.
 
@@ -52,6 +54,10 @@ import styl "github.com/rohanthewiz/go-styl"
 
 css, err := styl.Compile(src, styl.Options{Pretty: true})
 // or styl.CompileFile("styles.styl", opts) / styl.CompileReader(r, opts)
+
+// With a source map (self-contained: the original source is embedded):
+css, mapJSON, err := styl.CompileMap(src, styl.Options{Filename: "app.styl", OutFile: "app.css"})
+// or styl.CompileFileMap("app.styl", opts)
 ```
 
 `Options`:
@@ -62,7 +68,8 @@ css, err := styl.Compile(src, styl.Options{Pretty: true})
 | `MergeDuplicates` | Fold rules with identical bodies into one selector group. |
 | `IncludePaths` | Extra directories searched for `@import`. |
 | `BaseDir` | Directory relative `@import` paths resolve against (defaults to `Filename`'s dir). |
-| `Filename` | Source path, used in errors and to derive `BaseDir`. |
+| `Filename` | Source path, used in errors, to derive `BaseDir`, and as the map's `sources` entry. |
+| `OutFile` | Generated CSS filename recorded in the source map's `file` field. |
 
 ## CLI
 
@@ -71,7 +78,11 @@ go run ./cmd/styl input.styl            # pretty CSS to stdout
 go run ./cmd/styl -compress input.styl  # minified
 go run ./cmd/styl -merge input.styl     # merge duplicate rule bodies
 go run ./cmd/styl -o out.css input.styl # write to a file
+go run ./cmd/styl -o out.css -sourcemap input.styl  # also writes out.css.map
 ```
+
+`-sourcemap` requires `-o`; it writes `<out>.map` next to the CSS and appends a
+`/*# sourceMappingURL=… */` comment.
 
 ## Example
 
@@ -121,9 +132,10 @@ See [`examples/README.md`](examples/README.md) for the full index.
 
 ## Limitations
 
-Things to be aware of (some are tracked for [M6b](#roadmap)):
+Things to be aware of:
 
-- **No source maps yet.**
+- Source maps map at selector / declaration / at-rule granularity (column-accurate
+  for those, including compressed output); they do not yet map inside values.
 - Inside `url(...)` and `calc(...)`, bare Stylus variables are *not* evaluated —
   use interpolation: `calc(100% - {gutter})`. (`@media` query values *are*
   evaluated: `@media (min-width: bp)`.)
@@ -140,8 +152,8 @@ Things to be aware of (some are tracked for [M6b](#roadmap)):
 .styl  →  parser (brace→indent normalize, indentation line-tree + Pratt expr parser)
        →  ast
        →  eval (lexical scope, variable inlining, arithmetic, builtins, at-rules)
-       →  css (node tree → render, optional duplicate merge)
-       →  CSS
+       →  css (node tree → position-tracking render, optional merge + source map)
+       →  CSS (+ optional .map)
 ```
 
 Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `eval`,
@@ -156,7 +168,8 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] **M5** At-rules (`@media` / `@keyframes` / `@font-face` / …), brace syntax, compress parity
 - [x] **M6a** Correctness: `url()`/`calc()`, `!important`, media-query variables,
   bracket-aware selector splitting, whitespace-sensitive `-`/`+`
-- [ ] **M6b** Source maps; deeper compress parity and remaining edge cases
+- [x] **M6b** Source maps (Source Map v3, `CompileMap` / `-sourcemap`)
+- [ ] Future: value-level source mapping, deeper compress parity, more built-ins
 
 ## License
 

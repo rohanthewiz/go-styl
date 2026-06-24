@@ -21,6 +21,10 @@ type Options struct {
 	MergeDuplicates bool
 	BaseDir         string   // directory @import paths resolve against
 	IncludePaths    []string // extra directories searched for @import
+	// Source-map inputs (used by EvaluateMap).
+	SourceFile    string // .styl path recorded in the map's "sources"
+	SourceContent string // original source text, embedded as "sourcesContent"
+	OutFile       string // generated filename recorded in the map's "file"
 }
 
 // extendReq records a pending @extend: graft Extenders onto every rule matching
@@ -55,6 +59,28 @@ type execCtx struct {
 
 // Evaluate evaluates a stylesheet and returns the rendered CSS.
 func Evaluate(sheet *ast.Stylesheet, opts Options) (string, error) {
+	nodes, err := evalNodes(sheet, opts)
+	if err != nil {
+		return "", err
+	}
+	return css.RenderSheet(nodes, opts.Pretty, nil), nil
+}
+
+// EvaluateMap evaluates a stylesheet and returns the rendered CSS together with a
+// Source Map v3 document (JSON) mapping output positions back to the source.
+func EvaluateMap(sheet *ast.Stylesheet, opts Options) (cssOut, mapJSON string, err error) {
+	nodes, err := evalNodes(sheet, opts)
+	if err != nil {
+		return "", "", err
+	}
+	sm := css.NewSourceMap(opts.OutFile, opts.SourceFile, opts.SourceContent)
+	cssOut = css.RenderSheet(nodes, opts.Pretty, sm)
+	return cssOut, sm.JSON(), nil
+}
+
+// evalNodes runs the evaluator and returns the resolved top-level output nodes
+// (after @extend resolution and the optional duplicate-merge pass).
+func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, error) {
 	ev := &evaluator{
 		opts:         opts,
 		placeholders: map[string]*css.Rule{},
@@ -64,7 +90,7 @@ func Evaluate(sheet *ast.Stylesheet, opts Options) (string, error) {
 	ctx.sink = &ev.out
 
 	if err := ev.execBlock(sheet.Statements, ctx); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	ev.applyExtends()
@@ -73,9 +99,7 @@ func Evaluate(sheet *ast.Stylesheet, opts Options) (string, error) {
 	if opts.MergeDuplicates {
 		nodes = css.MergeDuplicates(nodes)
 	}
-
-	sheetOut := &css.Stylesheet{Nodes: nodes}
-	return sheetOut.Render(opts.Pretty), nil
+	return nodes, nil
 }
 
 // applyExtends grafts each @extend's selectors onto every matching target rule.
@@ -140,6 +164,7 @@ func (ev *evaluator) execStmt(stmt ast.Stmt, ctx *execCtx) error {
 			Property:  prop,
 			Value:     v.CSS(ev.opts.Pretty),
 			Important: s.Important,
+			Pos:       css.Pos{Line: s.Line, Col: s.Col},
 		})
 		return nil
 	case *ast.RuleSet:
@@ -206,6 +231,7 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 	rule := &css.Rule{
 		Selector:  joinSelectors(combined, ev.opts.Pretty),
 		Selectors: combined,
+		Pos:       css.Pos{Line: rs.Line, Col: rs.Col},
 	}
 	if allPlaceholders(combined) {
 		rule.Placeholder = true
