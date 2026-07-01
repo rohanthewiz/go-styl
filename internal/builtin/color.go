@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/rohanthewiz/go-styl/internal/value"
 )
@@ -20,6 +21,7 @@ func init() {
 	register("lightness", lightness)
 	register("lighten", lighten)
 	register("darken", darken)
+	register("spin", spin)
 	register("saturate", saturate)
 	register("desaturate", desaturate)
 	register("mix", mix)
@@ -194,8 +196,8 @@ func getColorArg(fn string, args []value.Value) (*value.Color, error) {
 	return argColor(fn, args, 0)
 }
 
-// adjustHSL applies delta to one HSL component and returns the new color.
-func adjustHSL(fn string, args []value.Value, apply func(h, s, l, amt float64) (float64, float64, float64)) (value.Value, error) {
+// adjustHSL applies a change to one HSL component and returns the new color.
+func adjustHSL(fn string, args []value.Value, apply func(h, s, l float64, amt *value.Number) (float64, float64, float64)) (value.Value, error) {
 	if err := wantArgs(fn, args, 2); err != nil {
 		return nil, err
 	}
@@ -208,31 +210,54 @@ func adjustHSL(fn string, args []value.Value, apply func(h, s, l, amt float64) (
 		return nil, err
 	}
 	h, s, l := c.HSL()
-	h, s, l = apply(h, s, l, fraction(amt))
+	h, s, l = apply(h, s, l, amt)
 	return value.NewColorHSL(h, s, l, c.A), nil
 }
 
+// hslDelta is the change reference Stylus's adjust() applies to an HSL
+// component (cur in [0,1]) for a signed amount: a `%` amount is relative —
+// increasing lightness scales into its remaining headroom, everything else
+// scales the component itself — while a unitless amount adds absolute
+// percentage points.
+func hslDelta(component string, cur float64, amt *value.Number, sign float64) float64 {
+	v := sign * amt.Num / 100
+	if amt.Unit != "%" {
+		return v
+	}
+	if component == "lightness" && v > 0 {
+		return (1 - cur) * v
+	}
+	return cur * v
+}
+
 func lighten(args []value.Value) (value.Value, error) {
-	return adjustHSL("lighten", args, func(h, s, l, amt float64) (float64, float64, float64) {
-		return h, s, l + amt
+	return adjustHSL("lighten", args, func(h, s, l float64, amt *value.Number) (float64, float64, float64) {
+		return h, s, l + hslDelta("lightness", l, amt, +1)
 	})
 }
 
 func darken(args []value.Value) (value.Value, error) {
-	return adjustHSL("darken", args, func(h, s, l, amt float64) (float64, float64, float64) {
-		return h, s, l - amt
+	return adjustHSL("darken", args, func(h, s, l float64, amt *value.Number) (float64, float64, float64) {
+		return h, s, l + hslDelta("lightness", l, amt, -1)
+	})
+}
+
+// spin rotates the hue by amount degrees.
+func spin(args []value.Value) (value.Value, error) {
+	return adjustHSL("spin", args, func(h, s, l float64, amt *value.Number) (float64, float64, float64) {
+		return h + amt.Num, s, l
 	})
 }
 
 func saturate(args []value.Value) (value.Value, error) {
-	return adjustHSL("saturate", args, func(h, s, l, amt float64) (float64, float64, float64) {
-		return h, s + amt, l
+	return adjustHSL("saturate", args, func(h, s, l float64, amt *value.Number) (float64, float64, float64) {
+		return h, s + hslDelta("saturation", s, amt, +1), l
 	})
 }
 
 func desaturate(args []value.Value) (value.Value, error) {
-	return adjustHSL("desaturate", args, func(h, s, l, amt float64) (float64, float64, float64) {
-		return h, s - amt, l
+	return adjustHSL("desaturate", args, func(h, s, l float64, amt *value.Number) (float64, float64, float64) {
+		return h, s + hslDelta("saturation", s, amt, -1), l
 	})
 }
 
@@ -284,11 +309,13 @@ func mixWith(fn string, args []value.Value, base *value.Color) (value.Value, err
 	return blend(base, c, fraction(amt)), nil
 }
 
-// blend linearly mixes two colors; w is the weight of c1.
+// blend linearly mixes two colors; w is the weight of c1. Channels are
+// floored, not rounded, matching reference Stylus's mix()/tint()/shade()
+// (mix(#fff, #000) is #7f7f7f there, while #fff * 0.5 rounds to #808080).
 func blend(c1, c2 *value.Color, w float64) *value.Color {
 	w = clampAlpha(w)
 	mixCh := func(a, b uint8) uint8 {
-		return clampByte(float64(a)*w + float64(b)*(1-w))
+		return uint8(math.Floor(float64(a)*w + float64(b)*(1-w)))
 	}
 	return &value.Color{
 		R: mixCh(c1.R, c2.R),

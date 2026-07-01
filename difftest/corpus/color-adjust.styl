@@ -1,0 +1,18 @@
+// HSL adjustment builtins: % amounts are relative (lightness scales into its
+// headroom when increasing), unitless amounts are absolute percentage points.
+.adjust
+  a darken(#e91e63, 10%)
+  b lighten(#e91e63, 10%)
+  c saturate(#6b8e23, 10%)
+  d desaturate(#6b8e23, 10%)
+  e darken(#e91e63, 10)
+  f lighten(#e91e63, 10)
+  g saturate(#6b8e23, 10)
+  h spin(#e91e63, 40deg)
+
+// mix/tint/shade floor their channels.
+.blend
+  a mix(#fff, #000)
+  b mix(#fff, #000, 30%)
+  c tint(#e91e63, 25%)
+  d shade(#e91e63, 25%)

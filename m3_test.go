@@ -27,8 +27,9 @@ func TestBuiltins(t *testing.T) {
 		{"saturation", "saturation(#00ffff)", "100%"},
 		{"lighten", "lighten(#000, 50%)", "#808080"},
 		{"darken", "darken(#fff, 25%)", "#bfbfbf"},
-		{"mix", "mix(#fff, #000)", "#808080"},
-		{"tint", "tint(#000, 50%)", "#808080"},
+		{"mix", "mix(#fff, #000)", "#7f7f7f"}, // stylus floors mix/tint/shade channels
+		{"tint", "tint(#000, 50%)", "#7f7f7f"},
+		{"spin", "spin(#e91e63, 40deg)", "#e9601e"},
 		{"complement", "complement(red)", "#0ff"},
 		{"invert", "invert(#000)", "#fff"},
 		// math

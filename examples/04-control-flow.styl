@@ -22,7 +22,7 @@ for i in 1 2 3 4
   .col-{i}
     width (100% / columns) * i
 
-// `for key, val in list` exposes the index as the first variable.
-for idx, shade in #eee #ccc #999
+// `for val, idx in list` exposes the index as the optional second variable.
+for shade, idx in #eee #ccc #999
   .swatch-{idx}
     background shade

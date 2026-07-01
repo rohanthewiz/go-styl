@@ -253,7 +253,7 @@ for i in 1 2 3 4         // for val in list
   .col-{i}
     width (100% / 4) * i
 
-for idx, shade in #eee #ccc #999   // for key, val in list
+for shade, idx in #eee #ccc #999   // for val, index in list
   .swatch-{idx}
     background shade
 ```

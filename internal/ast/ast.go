@@ -82,7 +82,7 @@ type If struct {
 	Line, Col int // 1-based source position
 }
 
-// For is a `for val in expr` or `for key, val in expr` loop.
+// For is a `for val in expr` or `for val, index in expr` loop.
 type For struct {
 	Index     string // optional index/key variable name ("" if absent)
 	Value     string // value variable name

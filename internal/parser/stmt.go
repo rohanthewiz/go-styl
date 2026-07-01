@@ -92,8 +92,9 @@ func condExpr(text string, line int) (ast.Expr, error) {
 	return parseExpr(toks, line)
 }
 
-// parseFor parses a `for val in expr` or `for key, val in expr` header (the line
-// must have an indented body).
+// parseFor parses a `for val in expr` or `for val, index in expr` header (the
+// line must have an indented body). As in reference Stylus, the first variable
+// is the element and the optional second is its index.
 func parseFor(ln *line) (ast.Stmt, error) {
 	toks, err := lexLine(ln.text[len("for"):], ln.lineNo)
 	if err != nil {
@@ -138,7 +139,7 @@ func parseFor(ln *line) (ast.Stmt, error) {
 	case 1:
 		f.Value = vars[0]
 	case 2:
-		f.Index, f.Value = vars[0], vars[1]
+		f.Value, f.Index = vars[0], vars[1]
 	default:
 		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "for-loop expects 1 or 2 variables, got %d", len(vars))
 	}
