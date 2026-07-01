@@ -546,6 +546,12 @@ func (ev *evaluator) evalBinary(b *ast.Binary, scope *Scope) (value.Value, error
 		return nil, err
 	}
 
+	if b.Literal {
+		// Unparenthesized `/` in a property value: operands evaluate, the
+		// division does not (font: 14px/1.5).
+		return &value.SlashList{L: l, R: r}, nil
+	}
+
 	switch b.Op {
 	case token.PLUS, token.MINUS, token.STAR, token.SLASH, token.PERCENT:
 		ln, lok := l.(*value.Number)

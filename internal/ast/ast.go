@@ -194,6 +194,11 @@ type Unary struct {
 type Binary struct {
 	Op   token.Kind
 	L, R Expr
+	// Literal marks a `/` at paren depth 0 in a property value. As in
+	// reference Stylus, the operands evaluate but the division is not
+	// performed: the value renders as "L/R" (think font: 14px/1.5).
+	// Parenthesize to divide: (x / 2).
+	Literal bool
 }
 
 // Call is a function/mixin invocation, e.g. rgba(0, 0, 0, 0.5).

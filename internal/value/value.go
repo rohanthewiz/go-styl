@@ -52,6 +52,16 @@ type List struct {
 	Comma bool
 }
 
+// SlashList is a literal slash join — a property-value `/` whose operands are
+// evaluated but not divided, e.g. the 14px/1.5 in `font: 14px/1.5 Arial`.
+type SlashList struct{ L, R Value }
+
+func (s *SlashList) TypeName() string { return "literal" }
+func (s *SlashList) String() string   { return s.CSS(true) }
+func (s *SlashList) CSS(pretty bool) string {
+	return s.L.CSS(pretty) + "/" + s.R.CSS(pretty)
+}
+
 // --- Number ---
 
 func (n *Number) TypeName() string { return "unit" }

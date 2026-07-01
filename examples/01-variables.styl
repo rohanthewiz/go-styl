@@ -13,7 +13,9 @@ body
   font-family font-stack
   font-size base
   line-height base * ratio   // 24px
-  margin base / 2 base       // 8px 16px  (a space-separated list)
+  // In a property value, `/` is literal CSS (font: 14px/1.5) — parenthesize
+  // to divide.
+  margin (base / 2) base     // 8px 16px  (a space-separated list)
   color accent
 
 h1

@@ -270,7 +270,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		valToks = valToks[1:]
 	}
 	valToks, important := stripImportant(valToks)
-	val, err := parseExpr(valToks, ln.lineNo)
+	val, err := parsePropExpr(valToks, ln.lineNo)
 	if err != nil {
 		return nil, err
 	}

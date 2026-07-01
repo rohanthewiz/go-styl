@@ -20,6 +20,10 @@ type exprParser struct {
 	toks []token.Token
 	pos  int
 	line int
+	// propValue marks a declaration-value expression, where a `/` outside
+	// parentheses is a literal slash (font: 14px/1.5), not division.
+	propValue bool
+	depth     int // current parenthesis nesting
 }
 
 // ParseExpr lexes and parses a single value expression from raw source text. It
@@ -34,10 +38,21 @@ func ParseExpr(src string, line int) (ast.Expr, error) {
 
 // parseExpr parses a value expression from toks (which must end with EOF).
 func parseExpr(toks []token.Token, line int) (ast.Expr, error) {
+	return parseExprMode(toks, line, false)
+}
+
+// parsePropExpr parses a declaration value. It differs from parseExpr in one
+// way, matching reference Stylus: an unparenthesized `/` is not division — its
+// operands still evaluate, but the slash renders literally (font: 14px/1.5).
+func parsePropExpr(toks []token.Token, line int) (ast.Expr, error) {
+	return parseExprMode(toks, line, true)
+}
+
+func parseExprMode(toks []token.Token, line int, propValue bool) (ast.Expr, error) {
 	if len(toks) == 0 || toks[len(toks)-1].Kind != token.EOF {
 		toks = append(toks, token.Token{Kind: token.EOF, Line: line})
 	}
-	p := &exprParser{toks: toks, line: line}
+	p := &exprParser{toks: toks, line: line, propValue: propValue}
 	e, err := p.parseValue()
 	if err != nil {
 		return nil, err
@@ -138,7 +153,8 @@ func (p *exprParser) parseBinary(minBP int) (ast.Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &ast.Binary{Op: op, L: left, R: right}
+		literal := op == token.SLASH && p.propValue && p.depth == 0
+		left = &ast.Binary{Op: op, L: left, R: right, Literal: literal}
 	}
 	return left, nil
 }
@@ -186,7 +202,9 @@ func (p *exprParser) parsePrimary() (ast.Expr, error) {
 		return &ast.Ident{Name: "&"}, nil
 	case token.LPAREN:
 		p.next()
+		p.depth++
 		e, err := p.parseValue()
+		p.depth--
 		if err != nil {
 			return nil, err
 		}
@@ -204,6 +222,8 @@ func (p *exprParser) parsePrimary() (ast.Expr, error) {
 // '(' is the current token. Each argument may itself be a space-separated list.
 func (p *exprParser) parseArgs() ([]ast.Expr, error) {
 	p.next() // consume '('
+	p.depth++
+	defer func() { p.depth-- }()
 	var args []ast.Expr
 	if p.cur().Kind == token.RPAREN {
 		p.next()

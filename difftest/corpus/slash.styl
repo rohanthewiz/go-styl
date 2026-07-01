@@ -1,0 +1,14 @@
+// In property values an unparenthesized / is literal CSS (operands still
+// evaluate); parenthesized it divides. Everywhere else / always divides.
+x = 20px
+z = x/2
+
+.a
+  line-height x/2
+  width (x/2)
+  margin x/2 auto
+  font 14px/1.5 Arial
+  border-radius 5px/10px
+
+.b
+  width z

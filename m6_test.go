@@ -36,6 +36,14 @@ func TestM6Correctness(t *testing.T) {
 		{"leading negative", "a\n  top -5px", "a{top:-5px}"},
 		{"multi list with negatives", "a\n  inset 1px 2px -3px 4px", "a{inset:1px 2px -3px 4px}"},
 
+		// property-value slash: literal unless parenthesized (font: 14px/1.5)
+		{"prop slash literal", "x = 20px\na\n  line-height x/2", "a{line-height:20px/2}"},
+		{"prop slash parens divide", "x = 20px\na\n  width (x/2)", "a{width:10px}"},
+		{"prop slash in list", "x = 20px\na\n  margin x/2 auto", "a{margin:20px/2 auto}"},
+		{"font shorthand slash", "a\n  font 14px/1.5 Arial", "a{font:14px/1.5 Arial}"},
+		{"assignment slash divides", "x = 20px\nz = x/2\na\n  width z", "a{width:10px}"},
+		{"call args slash divides", "a\n  width min(10px/2, 9px)", "a{width:5px}"},
+
 		// selector comma-splitting
 		{"comma in attr", `a[href$="a,b"]` + "\n  color red", `a[href$="a,b"]{color:red}`},
 
