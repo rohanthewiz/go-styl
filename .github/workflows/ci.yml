@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build and vet
+        run: |
+          go build ./...
+          go vet ./...
+      - name: Unit tests
+        run: go test -count=1 ./...
+
+  # Differential test vs the reference Node.js stylus compiler. Compares
+  # compressed output over the corpus and enforces difftest/known_diffs.txt:
+  # fails on any new divergence AND on any known diff that starts matching
+  # (remove its line to ratchet the compatibility score up).
+  difftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install reference stylus
+        run: npm ci --no-audit --no-fund
+        working-directory: difftest
+      - name: Differential test (compatibility score in log)
+        run: go test -count=1 -v -run TestDifferential ./difftest

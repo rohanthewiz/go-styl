@@ -1,0 +1,13 @@
+// @extend and @extends.
+.message
+  padding 10px
+  border 1px solid #eee
+
+.warning
+  @extend .message
+  color #e2e21e
+
+.error
+  @extends .message
+  color #dd3860
+  font-weight bold

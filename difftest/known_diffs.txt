@@ -1,0 +1,28 @@
+# Corpus files where go-styl currently diverges from reference stylus (npm stylus 0.64.0).
+# Format: <path> <note>. The differential test fails when a file NOT listed here
+# diverges (regression) and when a listed file starts matching (remove the line
+# to lock the improvement in). Regenerate mechanically with:
+#   UPDATE_KNOWN_DIFFS=1 go test ./difftest
+#
+# Entries marked [compat-bug?] look like go-styl deviations from stylus
+# semantics worth fixing and [compat-gap] are stylus features go-styl lacks;
+# the rest are deliberate go-styl extensions or reference-stylus failures.
+difftest/corpus/color-ops.styl [compat-gap] color +/- color channel arithmetic is unsupported ("cannot apply + to color and color")
+difftest/corpus/implicit-return.styl [compat-gap] a function body's last expression is not treated as its return value
+difftest/corpus/loops.styl [compat-bug?] for a, b in list: stylus binds value first then index; go-styl binds index first
+difftest/corpus/power.styl [compat-gap] the ** exponent operator is unsupported
+difftest/corpus/ranges.styl [compat-gap] range loops (1..3, 0...3) are unsupported
+difftest/corpus/transparent-mixins.styl [compat-gap] property-style mixin calls (border-radius 3px) emit a literal declaration instead of invoking the mixin
+examples/01-variables.styl [compat-bug?] go-styl evaluates y/2 in a property value; stylus keeps / literal unless parenthesized
+examples/03-mixins-functions.styl +mixin() call without a block: go-styl treats it as a plain call; stylus requires a block ("expected indent")
+examples/04-control-flow.styl [compat-bug?] for a, b in list: stylus binds value first then index; go-styl binds index first
+examples/05-builtins.styl reference stylus 0.64 crashes internally (TypeError in its builtin plumbing) on this builtins mix
+examples/06-interpolation.styl lone {expr} as a property value is a go-styl extension; stylus parse error
+examples/08-at-rules.styl stylus auto-generates vendor-prefixed @keyframes copies (@-moz-, @-webkit-, @-o-) and reorders; go-styl emits the unprefixed rule only
+examples/09-brace-syntax.styl [compat-bug?] darken() math differs: go-styl #c1134e vs stylus #d81557
+testdata/m2.styl single-line function definition f(x) = expr is a go-styl extension; stylus leaves double(15px) unevaluated
+testdata/m3.styl [compat-bug?] color channel rounding: 127.5 rounds up in go-styl (#808080), down in stylus (#7f7f7f)
+testdata/m4.styl {var} interpolation inside quoted strings is a go-styl extension; stylus keeps it literal
+testdata/m5.styl {var} interpolation in @media preludes is a go-styl extension; stylus parse error
+testdata/m5_braces.styl {var} interpolation in @media preludes is a go-styl extension; stylus parse error
+testdata/m6.styl {expr} interpolation inside calc() is a go-styl extension; stylus parse error

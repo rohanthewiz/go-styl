@@ -1,0 +1,28 @@
+// Nesting, parent references, combinators, attribute and pseudo selectors.
+nav
+  ul
+    margin 0
+    padding 0
+  li
+    display inline-block
+  a
+    color #333
+    &:hover
+      color #111
+    &.active
+      font-weight bold
+  > .brand
+    font-size 20px
+  + .sidebar
+    width 200px
+  ~ footer
+    clear both
+
+input[type="text"]
+  border 1px solid #ccc
+  &:focus
+    border-color #66f
+
+.a, .b
+  .child
+    margin 1px

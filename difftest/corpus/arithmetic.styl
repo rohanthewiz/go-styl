@@ -1,0 +1,18 @@
+// Unit arithmetic in canonical stylus form (division parenthesized).
+base = 16px
+ratio = 1.5
+
+.type
+  font-size base
+  line-height base * ratio
+  margin-top (base / 2)
+  padding base + 4px
+  width (100% / 3)
+  top -5px
+  bottom 10px - 15px
+  opacity 1 - 0.25
+
+.mixed
+  width 2 * 3px
+  height 12px % 5
+  min-width 5px + 10

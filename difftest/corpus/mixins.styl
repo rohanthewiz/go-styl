@@ -1,0 +1,12 @@
+// Block mixins with defaults, transparent mixin calls.
+border-radius(n = 5px)
+  -webkit-border-radius n
+  border-radius n
+
+size(w, h = w)
+  width w
+  height h
+
+button
+  border-radius()
+  size(80px, 24px)

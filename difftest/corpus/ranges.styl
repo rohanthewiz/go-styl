@@ -1,0 +1,8 @@
+// Range loops: 1..3 is inclusive, 0...3 excludes the upper bound.
+for n in 1..3
+  .w-{n}
+    width unit(n * 10, '%')
+
+for n in 0...3
+  .h-{n}
+    height unit(n * 10, px)

@@ -1,0 +1,8 @@
+{
+  "name": "go-styl-difftest",
+  "private": true,
+  "description": "Reference Stylus compiler for differential testing of go-styl",
+  "dependencies": {
+    "stylus": "0.64.0"
+  }
+}

@@ -1,0 +1,21 @@
+// Block-form functions with conditionals and explicit returns.
+pad(n)
+  if n > 10px
+    return n
+  return n * 2
+
+weight(kind)
+  if kind == heavy
+    return 700
+  else if kind == medium
+    return 500
+  else
+    return 400
+
+.box
+  padding pad(4px)
+  margin pad(12px)
+  font-weight weight(heavy)
+
+.note
+  font-weight weight(light)

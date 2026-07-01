@@ -214,6 +214,25 @@ Things to be aware of:
 - In brace syntax, statements that share a source line with an earlier one
   (one-liner blocks) report approximate positions; multi-line files are exact.
 
+## Compatibility with reference Stylus
+
+`difftest/` differentially tests go-styl against the reference Node.js
+[stylus](https://www.npmjs.com/package/stylus) compiler: every corpus file
+(`examples/`, `testdata/`, `difftest/corpus/`) is compiled by both, outputs are
+normalized (formatting-only differences like `white` vs `#fff` are erased), and
+the test reports a compatibility score. Known divergences — go-styl extensions,
+missing features, and reference-stylus failures — are cataloged with notes in
+[`difftest/known_diffs.txt`](difftest/known_diffs.txt). The test is a ratchet:
+it fails when an unlisted file diverges *and* when a listed file starts
+matching, so the score only moves up. CI runs it on every push.
+
+```sh
+npm install --prefix difftest   # once: fetches the reference compiler
+go test -v ./difftest           # prints the compatibility score
+```
+
+(The test skips itself when node or the stylus package is absent.)
+
 ## Architecture
 
 ```
@@ -237,7 +256,11 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] **M6a** Correctness: `url()`/`calc()`, `!important`, media-query variables,
   bracket-aware selector splitting, whitespace-sensitive `-`/`+`
 - [x] **M6b** Source maps (Source Map v3, `CompileMap` / `-sourcemap`)
-- [ ] Future: value-level source mapping, deeper compress parity, more built-ins
+- [x] **M7** Positioned errors (`file:line:col`, serr attributes) + fuzz hardening
+- [x] **M8** `fs.FS`/embed sources, `Build` API (deps), HTTP middleware (`stylserve`/`stylhttp`)
+- [x] **M9** Differential testing vs reference Stylus (compatibility score in CI)
+- [ ] Future: close `difftest/known_diffs.txt` compat gaps, value-level source
+  mapping, deeper compress parity, more built-ins
 
 ## License
 
