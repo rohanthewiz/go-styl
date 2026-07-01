@@ -42,6 +42,12 @@ Under active development. The compiler currently supports:
   "did you mean" hints for misspelled mixins) and carry `file`/`line`/`col` as
   structured [serr](https://github.com/rohanthewiz/serr) attributes for
   serr-aware loggers
+- **`io/fs.FS` sources**: compile from an `embed.FS` (or any `fs.FS`) with
+  `@import` resolved inside it — ship `.styl` sources in the binary
+- **HTTP middleware**: serve compiled CSS straight from `.styl` sources with
+  caching, ETags/304s, and dev source maps — adapters for `net/http`
+  ([`stylhttp`](stylhttp/)) and [rweb](https://github.com/rohanthewiz/rweb)
+  ([`stylrweb`](stylrweb/))
 
 See [the roadmap](#roadmap) for what's next.
 
@@ -62,6 +68,15 @@ css, err := styl.Compile(src, styl.Options{Pretty: true})
 // With a source map (self-contained: the original source is embedded):
 css, mapJSON, err := styl.CompileMap(src, styl.Options{Filename: "app.styl", OutFile: "app.css"})
 // or styl.CompileFileMap("app.styl", opts)
+
+// Build/BuildFile also report the files read (for cache invalidation):
+res, err := styl.BuildFile("app.styl", styl.Options{SourceMap: true})
+// res.CSS, res.Map, res.Deps ("app.styl" plus every inlined @import)
+
+// Compile from an embedded filesystem (imports resolve inside it):
+//go:embed styles/*.styl
+// var styles embed.FS
+css, err = styl.CompileFile("styles/app.styl", styl.Options{FS: styles})
 ```
 
 `Options`:
@@ -74,6 +89,51 @@ css, mapJSON, err := styl.CompileMap(src, styl.Options{Filename: "app.styl", Out
 | `BaseDir` | Directory relative `@import` paths resolve against (defaults to `Filename`'s dir). |
 | `Filename` | Source path, used in errors, to derive `BaseDir`, and as the map's `sources` entry. |
 | `OutFile` | Generated CSS filename recorded in the source map's `file` field. |
+| `FS` | An `fs.FS` (e.g. `embed.FS`) that sources and `@import` resolve through instead of the OS. |
+| `SourceMap` | Ask `Build`/`BuildFile` to also produce a source map. |
+
+## Serving over HTTP
+
+Both middleware adapters compile on first request and cache, recompiling when
+the source **or any of its `@import`s** change. ETags give you free 304s, and
+`SourceMaps: true` serves `<name>.css.map` alongside for DevTools.
+
+With the standard library (`GET /css/app.css` compiles `./styles/app.styl`):
+
+```go
+import (
+    "github.com/rohanthewiz/go-styl/stylhttp"
+    "github.com/rohanthewiz/go-styl/stylserve"
+)
+
+mux.Handle("/css/", http.StripPrefix("/css/",
+    stylhttp.New(stylserve.Options{Dir: "./styles", SourceMaps: true})))
+```
+
+With [rweb](https://github.com/rohanthewiz/rweb):
+
+```go
+import (
+    "github.com/rohanthewiz/go-styl/stylrweb"
+    "github.com/rohanthewiz/go-styl/stylserve"
+)
+
+s.Get("/css/*path", stylrweb.Handler(stylserve.Options{Dir: "./styles"}))
+```
+
+Or ship the stylesheets inside the binary:
+
+```go
+//go:embed styles/*.styl
+var styles embed.FS
+
+sub, _ := fs.Sub(styles, "styles")
+s.Get("/css/*path", stylrweb.Handler(stylserve.Options{FS: sub}))
+```
+
+`stylserve.Options`: `Dir` or `FS` (source root), `IncludePaths`, `Pretty`
+(default compressed), `MergeDuplicates`, `SourceMaps`. Compile errors return
+`500` with the positioned message; unknown paths return `404`.
 
 ## CLI
 

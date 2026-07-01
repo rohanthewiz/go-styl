@@ -2,7 +2,9 @@ package eval
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -126,15 +128,16 @@ func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 		return nil
 	}
 
-	abs, err := resolveImport(ctx.dir, s.Path, ev.opts.IncludePaths)
+	abs, err := resolveImport(ev.opts.FS, ctx.dir, s.Path, ev.opts.IncludePaths)
 	if err != nil {
 		return err
 	}
 	if ev.importing[abs] {
 		return fmt.Errorf("import cycle detected at %q", abs)
 	}
+	ev.deps = append(ev.deps, abs)
 
-	data, err := os.ReadFile(abs)
+	data, err := ev.readFile(abs)
 	if err != nil {
 		return fmt.Errorf("@import %q: %w", s.Path, err)
 	}
@@ -147,7 +150,7 @@ func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 	defer delete(ev.importing, abs)
 
 	importCtx := *ctx
-	importCtx.dir = filepath.Dir(abs)
+	importCtx.dir = dirOf(ev.opts.FS, abs)
 	importCtx.file = abs
 	return ev.execBlock(sheet.Statements, &importCtx)
 }
@@ -160,12 +163,36 @@ func importStmt(path string) string {
 	return `@import "` + path + `";`
 }
 
-// resolveImport locates a .styl import on disk. It searches dir first, then each
+// readFile reads a resolved import, from the configured fs.FS when set,
+// otherwise from the OS filesystem.
+func (ev *evaluator) readFile(name string) ([]byte, error) {
+	if ev.opts.FS != nil {
+		return fs.ReadFile(ev.opts.FS, name)
+	}
+	return os.ReadFile(name)
+}
+
+// dirOf returns the directory of a resolved import path, slash-separated in
+// fs.FS mode and OS-separated otherwise.
+func dirOf(fsys fs.FS, p string) string {
+	if fsys != nil {
+		return path.Dir(p)
+	}
+	return filepath.Dir(p)
+}
+
+// resolveImport locates a .styl import. It searches dir first, then each
 // include path, trying the path as given and with a ".styl" extension (and an
-// index.styl inside a matching directory).
-func resolveImport(dir, path string, includePaths []string) (string, error) {
+// index.styl inside a matching directory). With a non-nil fsys, resolution uses
+// slash-separated fs.FS paths (a leading '/' is treated as the FS root);
+// otherwise the OS filesystem, returning an absolute path.
+func resolveImport(fsys fs.FS, dir, imp string, includePaths []string) (string, error) {
+	if fsys != nil {
+		return resolveImportFS(fsys, dir, imp, includePaths)
+	}
+
 	var bases []string
-	if filepath.IsAbs(path) {
+	if filepath.IsAbs(imp) {
 		bases = []string{""}
 	} else {
 		bases = append(bases, dir)
@@ -173,9 +200,9 @@ func resolveImport(dir, path string, includePaths []string) (string, error) {
 	}
 
 	for _, base := range bases {
-		cand := path
+		cand := imp
 		if base != "" {
-			cand = filepath.Join(base, path)
+			cand = filepath.Join(base, imp)
 		}
 		for _, p := range []string{cand, cand + ".styl", filepath.Join(cand, "index.styl")} {
 			if info, err := os.Stat(p); err == nil && !info.IsDir() {
@@ -187,5 +214,33 @@ func resolveImport(dir, path string, includePaths []string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("@import %q: file not found", path)
+	return "", fmt.Errorf("@import %q: file not found", imp)
+}
+
+// resolveImportFS is resolveImport over an fs.FS.
+func resolveImportFS(fsys fs.FS, dir, imp string, includePaths []string) (string, error) {
+	var bases []string
+	if strings.HasPrefix(imp, "/") {
+		imp = strings.TrimPrefix(imp, "/")
+		bases = []string{"."}
+	} else {
+		if dir == "" {
+			dir = "."
+		}
+		bases = append(bases, dir)
+		bases = append(bases, includePaths...)
+	}
+
+	for _, base := range bases {
+		cand := path.Join(base, imp)
+		for _, p := range []string{cand, cand + ".styl", path.Join(cand, "index.styl")} {
+			if !fs.ValidPath(p) {
+				continue
+			}
+			if info, err := fs.Stat(fsys, p); err == nil && !info.IsDir() {
+				return p, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("@import %q: file not found", imp)
 }

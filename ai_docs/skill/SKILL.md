@@ -38,8 +38,19 @@ css, err := styl.CompileFile("styles.styl", styl.Options{Pretty: false})
 css, err := styl.CompileReader(r, styl.Options{})        // r is an io.Reader
 ```
 
-All three return `(string, error)`. On a parse/eval error the error carries the
-1-based source line, e.g. `line 7: undefined mixin "foo"`.
+All three return `(string, error)`. Compile errors are **positioned** —
+`app.styl:7:3: undefined mixin "foo"` (file falls back to `<input>`), with
+"did you mean" hints for misspelled mixins — and are wrapped with
+[serr](https://github.com/rohanthewiz/serr), carrying `file`/`line`/`col` as
+structured attributes (`serr`-aware loggers extract them automatically).
+
+**Build / BuildFile** return a `Result{CSS, Map, Deps}` where `Deps` lists every
+file the build read (the input plus inlined `@import`s) — the hook for cache
+invalidation. Set `Options.SourceMap` to also populate `Result.Map`.
+
+**`fs.FS` sources** — set `Options.FS` (e.g. an `embed.FS`) and
+`CompileFile`/`BuildFile`/`@import` all resolve inside it; a leading `/` on an
+import path means the FS root.
 
 **Source maps** (Source Map v3) — `CompileMap`/`CompileFileMap` return the CSS plus
 a JSON map (selectors, declarations, and at-rule headers map back to the `.styl`,
@@ -60,6 +71,8 @@ css, mapJSON, err := styl.CompileFileMap("app.styl", styl.Options{OutFile: "app.
 | `IncludePaths` | `[]string` | Extra directories searched for `@import`. |
 | `BaseDir` | `string` | Directory relative `@import` paths resolve against. Defaults to `Filename`'s directory. |
 | `Filename` | `string` | Source path; used in errors and to derive `BaseDir`. `CompileFile` sets it automatically. |
+| `FS` | `fs.FS` | Filesystem sources/`@import` resolve through (e.g. `embed.FS`) instead of the OS. |
+| `SourceMap` | `bool` | Ask `Build`/`BuildFile` to also produce a source map. |
 
 ### CLI (`cmd/styl`)
 
@@ -73,6 +86,31 @@ go run ./cmd/styl -o out.css -sourcemap input.styl  # also writes out.css.map
 
 `-sourcemap` requires `-o`; it writes `<out>.map` and appends a
 `/*# sourceMappingURL=… */` comment to the CSS.
+
+### Serving over HTTP
+
+Two adapters compile `.styl` on request and cache (invalidated when the source
+or any `@import` changes), with ETag/304 support and optional dev source maps
+(`SourceMaps: true` serves `<name>.css.map` and appends `sourceMappingURL`).
+Compile errors → `500` with the positioned message; unknown paths → `404`.
+
+```go
+// net/http:  GET /css/app.css  compiles  ./styles/app.styl
+mux.Handle("/css/", http.StripPrefix("/css/",
+    stylhttp.New(stylserve.Options{Dir: "./styles", SourceMaps: true})))
+
+// rweb: mount on a *path wildcard route
+s.Get("/css/*path", stylrweb.Handler(stylserve.Options{Dir: "./styles"}))
+
+// Embedded sources (imports resolve inside the FS)
+//go:embed styles/*.styl
+// var styles embed.FS
+sub, _ := fs.Sub(styles, "styles")
+s.Get("/css/*path", stylrweb.Handler(stylserve.Options{FS: sub}))
+```
+
+`stylserve.Options`: `Dir` **or** `FS` (source root), `IncludePaths`, `Pretty`
+(default compressed), `MergeDuplicates`, `SourceMaps`.
 
 ---
 

@@ -4,6 +4,7 @@ package eval
 
 import (
 	"fmt"
+	"io/fs"
 	"slices"
 	"strings"
 
@@ -23,7 +24,9 @@ type Options struct {
 	Filename        string   // source path, used to position error messages
 	BaseDir         string   // directory @import paths resolve against
 	IncludePaths    []string // extra directories searched for @import
-	// Source-map inputs (used by EvaluateMap).
+	FS              fs.FS    // when set, @import resolves through it instead of the OS
+	// Source-map inputs (used by EvaluateMap/EvaluateFull).
+	SourceMap     bool   // build a source map (EvaluateFull)
 	SourceFile    string // .styl path recorded in the map's "sources"
 	SourceContent string // original source text, embedded as "sourcesContent"
 	OutFile       string // generated filename recorded in the map's "file"
@@ -54,6 +57,7 @@ type evaluator struct {
 	extends      []extendReq
 	importing    map[string]bool // absolute paths currently being imported (cycle guard)
 	depth        int             // current function/mixin call depth
+	deps         []string        // resolved paths of every inlined @import, in order
 }
 
 // execCtx captures where statements emit while a block executes: the active
@@ -73,28 +77,39 @@ type execCtx struct {
 
 // Evaluate evaluates a stylesheet and returns the rendered CSS.
 func Evaluate(sheet *ast.Stylesheet, opts Options) (string, error) {
-	nodes, err := evalNodes(sheet, opts)
-	if err != nil {
-		return "", err
-	}
-	return css.RenderSheet(nodes, opts.Pretty, nil), nil
+	opts.SourceMap = false
+	cssOut, _, _, err := EvaluateFull(sheet, opts)
+	return cssOut, err
 }
 
 // EvaluateMap evaluates a stylesheet and returns the rendered CSS together with a
 // Source Map v3 document (JSON) mapping output positions back to the source.
 func EvaluateMap(sheet *ast.Stylesheet, opts Options) (cssOut, mapJSON string, err error) {
-	nodes, err := evalNodes(sheet, opts)
+	opts.SourceMap = true
+	cssOut, mapJSON, _, err = EvaluateFull(sheet, opts)
+	return cssOut, mapJSON, err
+}
+
+// EvaluateFull evaluates a stylesheet, returning the rendered CSS, a source map
+// (when opts.SourceMap is set, else ""), and the resolved paths of every
+// inlined @import (for build-cache invalidation).
+func EvaluateFull(sheet *ast.Stylesheet, opts Options) (cssOut, mapJSON string, deps []string, err error) {
+	nodes, deps, err := evalNodes(sheet, opts)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
+	}
+	if !opts.SourceMap {
+		return css.RenderSheet(nodes, opts.Pretty, nil), "", deps, nil
 	}
 	sm := css.NewSourceMap(opts.OutFile, opts.SourceFile, opts.SourceContent)
 	cssOut = css.RenderSheet(nodes, opts.Pretty, sm)
-	return cssOut, sm.JSON(), nil
+	return cssOut, sm.JSON(), deps, nil
 }
 
 // evalNodes runs the evaluator and returns the resolved top-level output nodes
-// (after @extend resolution and the optional duplicate-merge pass).
-func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, error) {
+// (after @extend resolution and the optional duplicate-merge pass) plus the
+// resolved import paths.
+func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, []string, error) {
 	ev := &evaluator{
 		opts:         opts,
 		placeholders: map[string]*css.Rule{},
@@ -104,7 +119,7 @@ func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, error) {
 	ctx.sink = &ev.out
 
 	if err := ev.execBlock(sheet.Statements, ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ev.applyExtends()
@@ -113,7 +128,7 @@ func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, error) {
 	if opts.MergeDuplicates {
 		nodes = css.MergeDuplicates(nodes)
 	}
-	return nodes, nil
+	return nodes, ev.deps, nil
 }
 
 // applyExtends grafts each @extend's selectors onto every matching target rule.
