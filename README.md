@@ -45,9 +45,9 @@ Under active development. The compiler currently supports:
 - **`io/fs.FS` sources**: compile from an `embed.FS` (or any `fs.FS`) with
   `@import` resolved inside it — ship `.styl` sources in the binary
 - **HTTP middleware**: serve compiled CSS straight from `.styl` sources with
-  caching, ETags/304s, and dev source maps — adapters for `net/http`
-  ([`stylhttp`](stylhttp/)) and [rweb](https://github.com/rohanthewiz/rweb)
-  ([`stylrweb`](stylrweb/))
+  caching, ETags/304s, and dev source maps — a `net/http` adapter here
+  ([`stylhttp`](stylhttp/)); the [rweb](https://github.com/rohanthewiz/rweb)
+  adapter ships with rweb (`rweb/middleware/stylus`)
 
 See [the roadmap](#roadmap) for what's next.
 
@@ -110,15 +110,16 @@ mux.Handle("/css/", http.StripPrefix("/css/",
     stylhttp.New(stylserve.Options{Dir: "./styles", SourceMaps: true})))
 ```
 
-With [rweb](https://github.com/rohanthewiz/rweb):
+With [rweb](https://github.com/rohanthewiz/rweb) — the adapter lives in the
+rweb repo so this module stays serr-only:
 
 ```go
 import (
-    "github.com/rohanthewiz/go-styl/stylrweb"
     "github.com/rohanthewiz/go-styl/stylserve"
+    "github.com/rohanthewiz/rweb/middleware/stylus"
 )
 
-s.Get("/css/*path", stylrweb.Handler(stylserve.Options{Dir: "./styles"}))
+s.Get("/css/*path", stylus.Handler(stylserve.Options{Dir: "./styles"}))
 ```
 
 Or ship the stylesheets inside the binary:
@@ -128,7 +129,7 @@ Or ship the stylesheets inside the binary:
 var styles embed.FS
 
 sub, _ := fs.Sub(styles, "styles")
-s.Get("/css/*path", stylrweb.Handler(stylserve.Options{FS: sub}))
+s.Get("/css/*path", stylus.Handler(stylserve.Options{FS: sub}))
 ```
 
 `stylserve.Options`: `Dir` or `FS` (source root), `IncludePaths`, `Pretty`

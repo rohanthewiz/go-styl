@@ -99,14 +99,14 @@ Compile errors → `500` with the positioned message; unknown paths → `404`.
 mux.Handle("/css/", http.StripPrefix("/css/",
     stylhttp.New(stylserve.Options{Dir: "./styles", SourceMaps: true})))
 
-// rweb: mount on a *path wildcard route
-s.Get("/css/*path", stylrweb.Handler(stylserve.Options{Dir: "./styles"}))
+// rweb: adapter ships with rweb (github.com/rohanthewiz/rweb/middleware/stylus)
+s.Get("/css/*path", stylus.Handler(stylserve.Options{Dir: "./styles"}))
 
 // Embedded sources (imports resolve inside the FS)
 //go:embed styles/*.styl
 // var styles embed.FS
 sub, _ := fs.Sub(styles, "styles")
-s.Get("/css/*path", stylrweb.Handler(stylserve.Options{FS: sub}))
+s.Get("/css/*path", stylus.Handler(stylserve.Options{FS: sub}))
 ```
 
 `stylserve.Options`: `Dir` **or** `FS` (source root), `IncludePaths`, `Pretty`
