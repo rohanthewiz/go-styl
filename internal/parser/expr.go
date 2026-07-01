@@ -1,9 +1,8 @@
 package parser
 
 import (
-	"fmt"
-
 	"github.com/rohanthewiz/go-styl/internal/ast"
+	"github.com/rohanthewiz/go-styl/internal/diag"
 	"github.com/rohanthewiz/go-styl/internal/lexer"
 	"github.com/rohanthewiz/go-styl/internal/token"
 )
@@ -44,7 +43,7 @@ func parseExpr(toks []token.Token, line int) (ast.Expr, error) {
 		return nil, err
 	}
 	if p.cur().Kind != token.EOF {
-		return nil, fmt.Errorf("line %d: unexpected %q in expression", line, p.cur().Text)
+		return nil, diag.Errorf(line, 0, "unexpected %q in expression", p.cur().Text)
 	}
 	return e, nil
 }
@@ -190,12 +189,12 @@ func (p *exprParser) parsePrimary() (ast.Expr, error) {
 			return nil, err
 		}
 		if p.cur().Kind != token.RPAREN {
-			return nil, fmt.Errorf("line %d: expected ')'", p.line)
+			return nil, diag.Errorf(p.line, 0, "expected ')'")
 		}
 		p.next()
 		return e, nil
 	default:
-		return nil, fmt.Errorf("line %d: unexpected %q in expression", p.line, t.Text)
+		return nil, diag.Errorf(p.line, 0, "unexpected %q in expression", t.Text)
 	}
 }
 
@@ -221,7 +220,7 @@ func (p *exprParser) parseArgs() ([]ast.Expr, error) {
 		break
 	}
 	if p.cur().Kind != token.RPAREN {
-		return nil, fmt.Errorf("line %d: expected ')' or ',' in argument list", p.line)
+		return nil, diag.Errorf(p.line, 0, "expected ')' or ',' in argument list")
 	}
 	p.next()
 	return args, nil

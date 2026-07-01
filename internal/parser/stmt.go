@@ -1,10 +1,10 @@
 package parser
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/rohanthewiz/go-styl/internal/ast"
+	"github.com/rohanthewiz/go-styl/internal/diag"
 	"github.com/rohanthewiz/go-styl/internal/token"
 )
 
@@ -24,10 +24,10 @@ func isCondStart(text string) bool {
 func parseConds(lines []*line, i int) (ast.Stmt, int, error) {
 	head := lines[i]
 	if len(head.children) == 0 {
-		return nil, 0, fmt.Errorf("line %d: %q requires an indented block", head.lineNo, head.text)
+		return nil, 0, diag.Errorf(head.lineNo, head.indent+1, "%q requires an indented block", head.text)
 	}
 
-	ifStmt := &ast.If{}
+	ifStmt := &ast.If{Line: head.lineNo, Col: head.indent + 1}
 
 	// Leading if / unless.
 	switch {
@@ -116,10 +116,10 @@ func parseFor(ln *line) (ast.Stmt, error) {
 			}
 			continue
 		}
-		return nil, fmt.Errorf("line %d: malformed for-loop header", ln.lineNo)
+		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "malformed for-loop header")
 	}
 	if pos >= len(toks) || toks[pos].Text != "in" {
-		return nil, fmt.Errorf("line %d: for-loop missing 'in'", ln.lineNo)
+		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "for-loop missing 'in'")
 	}
 	pos++ // consume 'in'
 
@@ -133,14 +133,14 @@ func parseFor(ln *line) (ast.Stmt, error) {
 		return nil, err
 	}
 
-	f := &ast.For{Iterable: iter, Body: body}
+	f := &ast.For{Iterable: iter, Body: body, Line: ln.lineNo, Col: ln.indent + 1}
 	switch len(vars) {
 	case 1:
 		f.Value = vars[0]
 	case 2:
 		f.Index, f.Value = vars[0], vars[1]
 	default:
-		return nil, fmt.Errorf("line %d: for-loop expects 1 or 2 variables, got %d", ln.lineNo, len(vars))
+		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "for-loop expects 1 or 2 variables, got %d", len(vars))
 	}
 	return f, nil
 }
@@ -177,7 +177,7 @@ func parseParams(inner []token.Token, line int) ([]ast.Param, error) {
 			continue
 		}
 		if seg[0].Kind != token.IDENT {
-			return nil, fmt.Errorf("line %d: invalid parameter", line)
+			return nil, diag.Errorf(line, 0, "invalid parameter")
 		}
 		p := ast.Param{Name: seg[0].Text}
 		switch {
@@ -192,7 +192,7 @@ func parseParams(inner []token.Token, line int) ([]ast.Param, error) {
 			}
 			p.Default = def
 		default:
-			return nil, fmt.Errorf("line %d: invalid parameter %q", line, seg[0].Text)
+			return nil, diag.Errorf(line, 0, "invalid parameter %q", seg[0].Text)
 		}
 		params = append(params, p)
 	}

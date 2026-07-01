@@ -6,10 +6,10 @@
 package lexer
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
 
+	"github.com/rohanthewiz/go-styl/internal/diag"
 	"github.com/rohanthewiz/go-styl/internal/token"
 )
 
@@ -113,7 +113,7 @@ func (l *lexer) scanString() error {
 		b.WriteRune(c)
 		l.pos++
 	}
-	return fmt.Errorf("line %d: unterminated string literal", l.line)
+	return diag.Errorf(l.line, 0, "unterminated string literal")
 }
 
 func (l *lexer) scanColor() error {
@@ -125,7 +125,7 @@ func (l *lexer) scanColor() error {
 		digits++
 	}
 	if digits != 3 && digits != 4 && digits != 6 && digits != 8 {
-		return fmt.Errorf("line %d: invalid hex color %q", l.line, string(l.src[start:l.pos]))
+		return diag.Errorf(l.line, 0, "invalid hex color %q", string(l.src[start:l.pos]))
 	}
 	l.toks = append(l.toks, token.Token{Kind: token.COLOR, Text: string(l.src[start:l.pos]), Line: l.line, Col: start + 1})
 	return nil
@@ -193,7 +193,9 @@ func (l *lexer) scanRawCall() {
 				}
 				l.pos++
 			}
-			l.pos++ // closing quote
+			if l.pos < len(l.src) {
+				l.pos++ // closing quote
+			}
 			continue
 		}
 		l.pos++
@@ -272,7 +274,7 @@ func (l *lexer) scanOperator() error {
 		l.pos++
 		return nil
 	}
-	return fmt.Errorf("line %d: unexpected character %q", l.line, string(c))
+	return diag.Errorf(l.line, 0, "unexpected character %q", string(c))
 }
 
 func (l *lexer) emit(k token.Kind, text string) {

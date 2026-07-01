@@ -5,10 +5,10 @@
 package parser
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/rohanthewiz/go-styl/internal/ast"
+	"github.com/rohanthewiz/go-styl/internal/diag"
 	"github.com/rohanthewiz/go-styl/internal/lexer"
 	"github.com/rohanthewiz/go-styl/internal/token"
 )
@@ -110,7 +110,7 @@ func parseBlock(lines []*line) ([]ast.Stmt, error) {
 		if isCondStart(ln.text) {
 			stmt, next, err := parseConds(lines, i)
 			if err != nil {
-				return nil, err
+				return nil, diag.WrapPos(err, "", ln.lineNo, ln.indent+1)
 			}
 			stmts = append(stmts, stmt)
 			i = next - 1
@@ -118,7 +118,9 @@ func parseBlock(lines []*line) ([]ast.Stmt, error) {
 		}
 		stmt, err := parseLine(ln)
 		if err != nil {
-			return nil, err
+			// Anchor errors from the line's lexing/expression parsing (which only
+			// know the line) at the line's leading column.
+			return nil, diag.WrapPos(err, "", ln.lineNo, ln.indent+1)
 		}
 		if stmt != nil {
 			stmts = append(stmts, stmt)
@@ -150,7 +152,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 				if err != nil {
 					return nil, err
 				}
-				return &ast.FuncDef{Name: name, Params: params, Body: body}, nil
+				return &ast.FuncDef{Name: name, Params: params, Body: body, Line: ln.lineNo, Col: ln.indent + 1}, nil
 			}
 		}
 		// Otherwise a ruleset; selectors are kept raw (not tokenized).
@@ -171,14 +173,14 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		}
 		target := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(text[len(kw):]), ";"))
 		if target == "" {
-			return nil, fmt.Errorf("line %d: @extend requires a selector", ln.lineNo)
+			return nil, diag.Errorf(ln.lineNo, ln.indent+1, "@extend requires a selector")
 		}
-		return &ast.Extend{Target: target}, nil
+		return &ast.Extend{Target: target, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
 	// @import <string | url(...)>
 	if wordPrefix(text, "@import") {
-		return parseImport(strings.TrimSpace(text[len("@import"):]), ln.lineNo)
+		return parseImport(strings.TrimSpace(text[len("@import"):]), ln.lineNo, ln.indent+1)
 	}
 
 	// Any other leaf at-rule (@charset, @namespace, …) passes through verbatim.
@@ -190,7 +192,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 	if wordPrefix(text, "return") {
 		rest := strings.TrimSpace(text[len("return"):])
 		if rest == "" {
-			return &ast.Return{}, nil
+			return &ast.Return{Line: ln.lineNo, Col: ln.indent + 1}, nil
 		}
 		toks, err := lexLine(rest, ln.lineNo)
 		if err != nil {
@@ -200,7 +202,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ast.Return{Value: val}, nil
+		return &ast.Return{Value: val, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
 	toks, err := lexLine(text, ln.lineNo)
@@ -215,10 +217,10 @@ func parseLine(ln *line) (ast.Stmt, error) {
 			if err != nil {
 				return nil, err
 			}
-			return &ast.MixinCall{Name: name, Args: args}, nil
+			return &ast.MixinCall{Name: name, Args: args, Line: ln.lineNo, Col: ln.indent + 1}, nil
 		}
 		if len(toks) == 3 && toks[2].Kind == token.EOF {
-			return &ast.MixinCall{Name: toks[1].Text}, nil
+			return &ast.MixinCall{Name: toks[1].Text, Line: ln.lineNo, Col: ln.indent + 1}, nil
 		}
 	}
 
@@ -229,7 +231,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ast.Assignment{Name: toks[0].Text, Op: toks[1].Kind, Value: val}, nil
+		return &ast.Assignment{Name: toks[0].Text, Op: toks[1].Kind, Value: val, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
 	// Single-line function definition: name(params) = expr
@@ -242,12 +244,12 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ast.FuncDef{Name: name, Params: params, Body: []ast.Stmt{&ast.Return{Value: val}}}, nil
+		return &ast.FuncDef{Name: name, Params: params, Body: []ast.Stmt{&ast.Return{Value: val, Line: ln.lineNo, Col: ln.indent + 1}}, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
 	// Bare mixin call: a single identifier on its own line.
 	if len(toks) == 2 && toks[0].Kind == token.IDENT && toks[1].Kind == token.EOF {
-		return &ast.MixinCall{Name: toks[0].Text}, nil
+		return &ast.MixinCall{Name: toks[0].Text, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
 	// Mixin call: name(args) consuming the whole line.
@@ -256,12 +258,12 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ast.MixinCall{Name: name, Args: args}, nil
+		return &ast.MixinCall{Name: name, Args: args, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
 	// Declaration: `property value...`, with an optional colon after the property.
 	if toks[0].Kind != token.IDENT {
-		return nil, fmt.Errorf("line %d: expected a property declaration, got %q", ln.lineNo, text)
+		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "expected a property declaration, got %q", text)
 	}
 	valToks := toks[1:]
 	if valToks[0].Kind == token.COLON {
@@ -301,7 +303,7 @@ func parseAtRule(ln *line) (ast.Stmt, error) {
 	}
 	name := head[1:i]
 	if name == "" {
-		return nil, fmt.Errorf("line %d: empty at-rule", ln.lineNo)
+		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "empty at-rule")
 	}
 	params := strings.TrimSpace(head[i:])
 
@@ -319,13 +321,13 @@ func parseAtRule(ln *line) (ast.Stmt, error) {
 // parseImport parses the argument of an `@import` line. The argument is a quoted
 // path or a url(...). A `.css` path, an absolute URL, or a url(...) becomes a
 // literal passthrough import; any other path is inlined from a .styl file.
-func parseImport(rest string, lineNo int) (ast.Stmt, error) {
+func parseImport(rest string, lineNo, col int) (ast.Stmt, error) {
 	rest = strings.TrimSpace(strings.TrimSuffix(rest, ";"))
 	if rest == "" {
-		return nil, fmt.Errorf("line %d: @import requires a path", lineNo)
+		return nil, diag.Errorf(lineNo, col, "@import requires a path")
 	}
 	if strings.HasPrefix(strings.ToLower(rest), "url(") {
-		return &ast.Import{Path: rest, Literal: true}, nil
+		return &ast.Import{Path: rest, Literal: true, Line: lineNo, Col: col}, nil
 	}
 
 	path := rest
@@ -336,7 +338,7 @@ func parseImport(rest string, lineNo int) (ast.Stmt, error) {
 	literal := strings.HasSuffix(low, ".css") ||
 		strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") ||
 		strings.HasPrefix(path, "//")
-	return &ast.Import{Path: path, Literal: literal}, nil
+	return &ast.Import{Path: path, Literal: literal, Line: lineNo, Col: col}, nil
 }
 
 // splitSelectors splits a selector line on top-level commas, ignoring commas

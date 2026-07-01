@@ -10,6 +10,7 @@ import (
 	"github.com/rohanthewiz/go-styl/internal/ast"
 	"github.com/rohanthewiz/go-styl/internal/builtin"
 	"github.com/rohanthewiz/go-styl/internal/css"
+	"github.com/rohanthewiz/go-styl/internal/diag"
 	"github.com/rohanthewiz/go-styl/internal/parser"
 	"github.com/rohanthewiz/go-styl/internal/token"
 	"github.com/rohanthewiz/go-styl/internal/value"
@@ -19,6 +20,7 @@ import (
 type Options struct {
 	Pretty          bool
 	MergeDuplicates bool
+	Filename        string   // source path, used to position error messages
 	BaseDir         string   // directory @import paths resolve against
 	IncludePaths    []string // extra directories searched for @import
 	// Source-map inputs (used by EvaluateMap).
@@ -34,6 +36,16 @@ type extendReq struct {
 	target    string
 }
 
+// maxCallDepth bounds function/mixin call nesting so runaway recursion
+// (a mixin calling itself without a base case) errors instead of exhausting
+// the process stack.
+const maxCallDepth = 256
+
+// maxSelectors bounds a single rule's combined selector list. Nested
+// comma-separated selector groups multiply, and recursive mixins can drive
+// that growth exponentially.
+const maxSelectors = 16384
+
 type evaluator struct {
 	opts         Options
 	out          []css.Node           // top-level output nodes in encounter order
@@ -41,6 +53,7 @@ type evaluator struct {
 	placeholders map[string]*css.Rule // $name -> placeholder rule
 	extends      []extendReq
 	importing    map[string]bool // absolute paths currently being imported (cycle guard)
+	depth        int             // current function/mixin call depth
 }
 
 // execCtx captures where statements emit while a block executes: the active
@@ -53,6 +66,7 @@ type execCtx struct {
 	parents  []string
 	sink     *[]css.Node // where rulesets/at-rules in this block are emitted
 	dir      string      // directory @import paths in this block resolve against
+	file     string      // source file this block's statements came from
 	ret      value.Value
 	returned bool
 }
@@ -86,7 +100,7 @@ func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, error) {
 		placeholders: map[string]*css.Rule{},
 		importing:    map[string]bool{},
 	}
-	ctx := &execCtx{scope: NewScope(), dir: opts.BaseDir}
+	ctx := &execCtx{scope: NewScope(), dir: opts.BaseDir, file: opts.Filename}
 	ctx.sink = &ev.out
 
 	if err := ev.execBlock(sheet.Statements, ctx); err != nil {
@@ -144,7 +158,18 @@ func (ev *evaluator) execBlock(stmts []ast.Stmt, ctx *execCtx) error {
 	return nil
 }
 
+// execStmt executes one statement, anchoring any resulting error at the
+// statement's source position (an error already positioned deeper — e.g. inside
+// a mixin body — keeps its inner position).
 func (ev *evaluator) execStmt(stmt ast.Stmt, ctx *execCtx) error {
+	if err := ev.execStmtInner(stmt, ctx); err != nil {
+		line, col := ast.Pos(stmt)
+		return diag.WrapPos(err, ctx.file, line, col)
+	}
+	return nil
+}
+
+func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 	switch s := stmt.(type) {
 	case *ast.Assignment:
 		return ev.evalAssignment(s, ctx.scope)
@@ -170,7 +195,7 @@ func (ev *evaluator) execStmt(stmt ast.Stmt, ctx *execCtx) error {
 	case *ast.RuleSet:
 		return ev.evalRuleSet(s, ctx)
 	case *ast.FuncDef:
-		ctx.scope.SetFunc(s.Name, &Closure{Def: s, Scope: ctx.scope})
+		ctx.scope.SetFunc(s.Name, &Closure{Def: s, Scope: ctx.scope, File: ctx.file})
 		return nil
 	case *ast.MixinCall:
 		return ev.evalMixinCall(s, ctx)
@@ -227,6 +252,11 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 		selfs[i] = r
 	}
 	combined := combineSelectors(ctx.parents, selfs, ev.opts.Pretty)
+	// Nested comma groups multiply (parents × selfs); recursion can make that
+	// exponential, so bail out before memory does.
+	if len(combined) > maxSelectors {
+		return fmt.Errorf("combined selector count exceeds %d — runaway selector nesting?", maxSelectors)
+	}
 
 	rule := &css.Rule{
 		Selector:  joinSelectors(combined, ev.opts.Pretty),
@@ -242,7 +272,7 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 	*ctx.sink = append(*ctx.sink, rule)
 	ev.rules = append(ev.rules, rule)
 
-	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, sink: ctx.sink, dir: ctx.dir}
+	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, sink: ctx.sink, dir: ctx.dir, file: ctx.file}
 	if err := ev.execBlock(rs.Body, child); err != nil {
 		return err
 	}
@@ -299,6 +329,13 @@ func (ev *evaluator) evalFor(s *ast.For, ctx *execCtx) error {
 func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 	cl, ok := ctx.scope.GetFunc(s.Name)
 	if !ok {
+		candidates := ctx.scope.FuncNames()
+		for name := range builtin.Registry {
+			candidates = append(candidates, name)
+		}
+		if hint := suggest(s.Name, candidates); hint != "" {
+			return fmt.Errorf("undefined mixin %q (did you mean %q?)", s.Name, hint)
+		}
 		return fmt.Errorf("undefined mixin %q", s.Name)
 	}
 	args, err := ev.evalArgs(s.Args, ctx.scope)
@@ -314,11 +351,19 @@ func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 // caller's output; pass nil for a pure function (expression) call. The return
 // value is the body's `return` value, or Null if none.
 func (ev *evaluator) invoke(cl *Closure, args []value.Value, emit *execCtx) (value.Value, error) {
+	if ev.depth >= maxCallDepth {
+		return nil, fmt.Errorf("call depth exceeds %d in %q — unbounded recursion?", maxCallDepth, cl.Def.Name)
+	}
+	ev.depth++
+	defer func() { ev.depth-- }()
+
 	fscope := cl.Scope.Child()
 	if err := ev.bindParams(fscope, cl.Def.Params, args); err != nil {
 		return nil, err
 	}
-	fctx := &execCtx{scope: fscope}
+	// Body statements' positions refer to the definition site, so error
+	// positioning uses the closure's file rather than the caller's.
+	fctx := &execCtx{scope: fscope, file: cl.File}
 	if emit != nil {
 		fctx.rule = emit.rule
 		fctx.parents = emit.parents

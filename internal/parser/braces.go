@@ -39,26 +39,49 @@ func usesBraces(src string) bool {
 // separate statements. Interpolation braces and string/comment contents are
 // preserved verbatim; comments are dropped (the line-tree builder strips them
 // anyway).
+//
+// Statements are emitted on their original source line (padding with blank
+// lines as needed) so that error positions and source maps remain accurate.
+// Only statements sharing a source line (one-liner blocks) drift downward.
 func bracesToIndent(src string) string {
 	runes := []rune(src)
 	var out strings.Builder
 	var lineBuf strings.Builder
 	depth := 0
+	srcLine := 1 // source line currently being scanned
+	bufLine := 1 // source line where the buffered statement began
+	outLine := 1 // line number the next output write lands on
+	hasContent := false
 
 	flush := func() {
 		s := strings.TrimSpace(lineBuf.String())
 		lineBuf.Reset()
+		hasContent = false
 		if s == "" {
 			return
+		}
+		for outLine < bufLine {
+			out.WriteByte('\n')
+			outLine++
 		}
 		out.WriteString(strings.Repeat("  ", depth))
 		out.WriteString(s)
 		out.WriteByte('\n')
+		outLine++
+	}
+
+	buffer := func(s string) {
+		if !hasContent && strings.TrimSpace(s) != "" {
+			hasContent = true
+			bufLine = srcLine
+		}
+		lineBuf.WriteString(s)
+		srcLine += strings.Count(s, "\n")
 	}
 
 	scanStructural(runes, scanHandlers{
-		text:   func(s string) { lineBuf.WriteString(s) },
-		interp: func(s string) { lineBuf.WriteString(s) },
+		text:   buffer,
+		interp: buffer,
 		open: func() {
 			flush() // the buffered text is the block header (selector/at-rule)
 			depth++
@@ -69,8 +92,12 @@ func bracesToIndent(src string) string {
 				depth--
 			}
 		},
-		semi:    func() { flush() },
-		newline: func() { flush() },
+		semi: func() { flush() },
+		newline: func() {
+			flush()
+			srcLine++
+		},
+		skip: func(n int) { srcLine += n },
 	})
 	flush()
 	return out.String()
@@ -86,6 +113,7 @@ type scanHandlers struct {
 	close   func()       // a block-closing brace
 	semi    func()       // a top-level ';'
 	newline func()       // a source newline
+	skip    func(int)    // newlines consumed silently (inside skipped comments)
 	block   func(int, int) bool
 }
 
@@ -124,6 +152,17 @@ func scanStructural(runes []rune, h scanHandlers) {
 			j := i + 2
 			for j+1 < n && !(runes[j] == '*' && runes[j+1] == '/') {
 				j++
+			}
+			if h.skip != nil {
+				nl := 0
+				for k := i; k <= j+1 && k < n; k++ {
+					if runes[k] == '\n' {
+						nl++
+					}
+				}
+				if nl > 0 {
+					h.skip(nl)
+				}
 			}
 			i = j + 1 // skip past "*/"
 

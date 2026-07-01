@@ -6,12 +6,16 @@
 package styl
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 
+	"github.com/rohanthewiz/go-styl/internal/diag"
 	"github.com/rohanthewiz/go-styl/internal/eval"
 	"github.com/rohanthewiz/go-styl/internal/parser"
+	"github.com/rohanthewiz/serr"
 )
 
 // Options configures compilation.
@@ -36,21 +40,49 @@ type Options struct {
 }
 
 // Compile compiles Stylus source to CSS.
+//
+// Errors are positioned — their message begins with "file:line:col:" (the file
+// falls back to "<input>" when Options.Filename is unset) — and are wrapped
+// with serr, carrying "file", "line", and "col" as structured attributes for
+// serr-aware loggers.
 func Compile(src string, opts Options) (string, error) {
 	sheet, err := parser.Parse(src)
 	if err != nil {
-		return "", err
+		return "", compileErr(err, opts.Filename)
 	}
 	baseDir := opts.BaseDir
 	if baseDir == "" && opts.Filename != "" {
 		baseDir = filepath.Dir(opts.Filename)
 	}
-	return eval.Evaluate(sheet, eval.Options{
+	out, err := eval.Evaluate(sheet, eval.Options{
 		Pretty:          opts.Pretty,
 		MergeDuplicates: opts.MergeDuplicates,
+		Filename:        opts.Filename,
 		BaseDir:         baseDir,
 		IncludePaths:    opts.IncludePaths,
 	})
+	if err != nil {
+		return "", compileErr(err, opts.Filename)
+	}
+	return out, nil
+}
+
+// compileErr finishes an internal compile error for the public API: positioned
+// errors get the top-level filename filled in (when still unknown) and are
+// wrapped with serr so file/line/col are available as structured attributes.
+func compileErr(err error, file string) error {
+	if err == nil {
+		return nil
+	}
+	err = diag.SetFile(err, file)
+	var de *diag.Error
+	if errors.As(err, &de) {
+		return serr.Wrap(err,
+			"file", de.File,
+			"line", strconv.Itoa(de.Line),
+			"col", strconv.Itoa(de.Col))
+	}
+	return serr.Wrap(err, "file", file)
 }
 
 // CompileMap compiles Stylus source to CSS and also returns a Source Map v3
@@ -59,7 +91,7 @@ func Compile(src string, opts Options) (string, error) {
 func CompileMap(src string, opts Options) (cssOut, mapJSON string, err error) {
 	sheet, err := parser.Parse(src)
 	if err != nil {
-		return "", "", err
+		return "", "", compileErr(err, opts.Filename)
 	}
 	baseDir := opts.BaseDir
 	if baseDir == "" && opts.Filename != "" {
@@ -69,15 +101,20 @@ func CompileMap(src string, opts Options) (cssOut, mapJSON string, err error) {
 	if source == "" {
 		source = "input.styl"
 	}
-	return eval.EvaluateMap(sheet, eval.Options{
+	cssOut, mapJSON, err = eval.EvaluateMap(sheet, eval.Options{
 		Pretty:          opts.Pretty,
 		MergeDuplicates: opts.MergeDuplicates,
+		Filename:        opts.Filename,
 		BaseDir:         baseDir,
 		IncludePaths:    opts.IncludePaths,
 		SourceFile:      source,
 		SourceContent:   src,
 		OutFile:         opts.OutFile,
 	})
+	if err != nil {
+		return "", "", compileErr(err, opts.Filename)
+	}
+	return cssOut, mapJSON, nil
 }
 
 // CompileFileMap compiles the Stylus file at path, returning CSS and its source

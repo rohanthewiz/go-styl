@@ -1,0 +1,2 @@
+go test fuzz v1
+string("double(n) = n * 2\n\nbox()\n  box()\n\n  if theme == dark\n    background black\n    color white\n  else\n    background white\n\na\n  box(2px)\n  for w in 1 2 3\n    border-width w * 1pxe")

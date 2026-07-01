@@ -6,10 +6,12 @@ import (
 )
 
 // Closure is a function/mixin definition paired with the scope it was defined in
-// (so it can resolve free variables lexically when invoked).
+// (so it can resolve free variables lexically when invoked). File records the
+// source file of the definition, for positioning errors raised in the body.
 type Closure struct {
 	Def   *ast.FuncDef
 	Scope *Scope
+	File  string
 }
 
 // Scope is a lexical scope in the chain. It holds variables and function/mixin
@@ -65,4 +67,15 @@ func (s *Scope) GetFunc(name string) (*Closure, bool) {
 // SetFunc binds a function/mixin in the current scope.
 func (s *Scope) SetFunc(name string, c *Closure) {
 	s.funcs[name] = c
+}
+
+// FuncNames returns every function/mixin name visible from this scope.
+func (s *Scope) FuncNames() []string {
+	var out []string
+	for sc := s; sc != nil; sc = sc.parent {
+		for name := range sc.funcs {
+			out = append(out, name)
+		}
+	}
+	return out
 }

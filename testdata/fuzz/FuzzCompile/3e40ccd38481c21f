@@ -1,0 +1,2 @@
+go test fuzz v1
+string("size(A00=0)\n A0 00,x\n  size\nsize")

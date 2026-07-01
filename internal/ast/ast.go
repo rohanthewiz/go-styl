@@ -37,9 +37,10 @@ type Declaration struct {
 
 // Assignment binds a variable, e.g. `base = 10px` or `x ?= 1`.
 type Assignment struct {
-	Name  string
-	Op    token.Kind // token.ASSIGN or token.ASSIGNQ
-	Value Expr
+	Name      string
+	Op        token.Kind // token.ASSIGN or token.ASSIGNQ
+	Value     Expr
+	Line, Col int // 1-based source position
 }
 
 // Param is a function/mixin parameter, optionally with a default value or
@@ -54,16 +55,18 @@ type Param struct {
 // a callee behaves as a value-returning function or a declaration-emitting mixin
 // is decided at the call site by how it is used.
 type FuncDef struct {
-	Name   string
-	Params []Param
-	Body   []Stmt
+	Name      string
+	Params    []Param
+	Body      []Stmt
+	Line, Col int // 1-based source position
 }
 
 // MixinCall invokes a function/mixin in statement position (emitting its body),
 // e.g. `clearfix()` or `+button(blue)`.
 type MixinCall struct {
-	Name string
-	Args []Expr
+	Name      string
+	Args      []Expr
+	Line, Col int // 1-based source position
 }
 
 // CondBranch is one `if`/`else if` arm: a condition and the body to run if true.
@@ -74,36 +77,41 @@ type CondBranch struct {
 
 // If is an if/else-if/else chain. Else is the final else body (nil if absent).
 type If struct {
-	Branches []CondBranch
-	Else     []Stmt
+	Branches  []CondBranch
+	Else      []Stmt
+	Line, Col int // 1-based source position
 }
 
 // For is a `for val in expr` or `for key, val in expr` loop.
 type For struct {
-	Index    string // optional index/key variable name ("" if absent)
-	Value    string // value variable name
-	Iterable Expr
-	Body     []Stmt
+	Index     string // optional index/key variable name ("" if absent)
+	Value     string // value variable name
+	Iterable  Expr
+	Body      []Stmt
+	Line, Col int // 1-based source position
 }
 
 // Return yields a value from a function body.
 type Return struct {
-	Value Expr
+	Value     Expr
+	Line, Col int // 1-based source position
 }
 
 // Extend records an `@extend` (or `@extends`) request: the current rule's
 // selectors should be grafted onto every rule matching Target. Target is a raw
 // selector string, e.g. ".message" or a "$placeholder" name.
 type Extend struct {
-	Target string
+	Target    string
+	Line, Col int // 1-based source position
 }
 
 // Import brings in another stylesheet. When Literal is true the import is left as
 // a verbatim `@import` in the output (CSS imports, url(), absolute URLs);
 // otherwise the referenced .styl file is parsed and inlined, sharing scope.
 type Import struct {
-	Path    string // the import argument with quotes stripped
-	Literal bool   // true => passthrough @import; false => inline a .styl file
+	Path      string // the import argument with quotes stripped
+	Literal   bool   // true => passthrough @import; false => inline a .styl file
+	Line, Col int    // 1-based source position
 }
 
 // AtRule is a block or leaf at-rule (@media, @keyframes, @font-face, @supports,
@@ -115,6 +123,35 @@ type AtRule struct {
 	Params    string
 	Body      []Stmt
 	Line, Col int // 1-based source position
+}
+
+// Pos returns a statement's 1-based source position, or (0, 0) if unrecorded.
+func Pos(s Stmt) (line, col int) {
+	switch n := s.(type) {
+	case *RuleSet:
+		return n.Line, n.Col
+	case *Declaration:
+		return n.Line, n.Col
+	case *Assignment:
+		return n.Line, n.Col
+	case *FuncDef:
+		return n.Line, n.Col
+	case *MixinCall:
+		return n.Line, n.Col
+	case *If:
+		return n.Line, n.Col
+	case *For:
+		return n.Line, n.Col
+	case *Return:
+		return n.Line, n.Col
+	case *Extend:
+		return n.Line, n.Col
+	case *Import:
+		return n.Line, n.Col
+	case *AtRule:
+		return n.Line, n.Col
+	}
+	return 0, 0
 }
 
 func (*Stylesheet) stmtNode()  {}

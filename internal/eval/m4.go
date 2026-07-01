@@ -8,6 +8,7 @@ import (
 
 	"github.com/rohanthewiz/go-styl/internal/ast"
 	"github.com/rohanthewiz/go-styl/internal/css"
+	"github.com/rohanthewiz/go-styl/internal/diag"
 	"github.com/rohanthewiz/go-styl/internal/parser"
 )
 
@@ -139,7 +140,7 @@ func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 	}
 	sheet, err := parser.Parse(string(data))
 	if err != nil {
-		return err
+		return diag.SetFile(err, abs)
 	}
 
 	ev.importing[abs] = true
@@ -147,6 +148,7 @@ func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 
 	importCtx := *ctx
 	importCtx.dir = filepath.Dir(abs)
+	importCtx.file = abs
 	return ev.execBlock(sheet.Statements, &importCtx)
 }
 

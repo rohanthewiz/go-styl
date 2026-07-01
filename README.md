@@ -1,6 +1,6 @@
 # go-styl
 
-A pure-Go compiler for the [Stylus](https://stylus-lang.com/) (`.styl`) CSS preprocessor — no Node.js, no cgo, zero external dependencies.
+A pure-Go compiler for the [Stylus](https://stylus-lang.com/) (`.styl`) CSS preprocessor — no Node.js, no cgo. The only dependency is [serr](https://github.com/rohanthewiz/serr), a zero-dependency structured-error wrapper.
 
 > Forked from [aerogo/scarlet](https://github.com/aerogo/scarlet) and rebuilt around a real
 > lexer → AST → evaluator pipeline so it can target the full Stylus language rather than a
@@ -38,6 +38,10 @@ Under active development. The compiler currently supports:
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
 - **Source maps** (Source Map v3) mapping selectors and declarations back to the
   `.styl` source
+- **Positioned errors**: compile errors read `file:line:col: message` (with
+  "did you mean" hints for misspelled mixins) and carry `file`/`line`/`col` as
+  structured [serr](https://github.com/rohanthewiz/serr) attributes for
+  serr-aware loggers
 
 See [the roadmap](#roadmap) for what's next.
 
@@ -144,7 +148,10 @@ Things to be aware of:
   use the bare variable (`width x`, not `width {x}`).
 - The `MergeDuplicates` pass is a non-standard extra-compression option (off by
   default); standard Stylus does not fold identical rule bodies.
-- Errors are reported with line numbers but without source-map-grade positions.
+- Function/mixin call depth is capped at 256 and a rule's combined selector
+  count at 16384, so unbounded recursion errors out instead of hanging.
+- In brace syntax, statements that share a source line with an earlier one
+  (one-liner blocks) report approximate positions; multi-line files are exact.
 
 ## Architecture
 
