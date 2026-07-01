@@ -2,13 +2,13 @@
 
 A pure-Go compiler for the [Stylus](https://stylus-lang.com/) (`.styl`) CSS preprocessor — no Node.js, no cgo. The only dependency is [serr](https://github.com/rohanthewiz/serr), a zero-dependency structured-error wrapper.
 
-> Forked from [aerogo/scarlet](https://github.com/aerogo/scarlet) and rebuilt around a real
+> Inspired by [aerogo/scarlet](https://github.com/aerogo/scarlet) but rebuilt around a real
 > lexer → AST → evaluator pipeline so it can target the full Stylus language rather than a
 > Stylus-inspired subset.
 
 ## Status
 
-Under active development. The compiler currently supports:
+Under active development -- consider this Alpha. The compiler currently supports:
 
 - Both the **indentation syntax** and the CSS-like **brace/semicolon syntax**
 - Indentation-based nesting with `&` parent references and pseudo-class attachment
