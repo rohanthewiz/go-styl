@@ -149,7 +149,10 @@ func parseFor(ln *line) (ast.Stmt, error) {
 // returns the name, the tokens inside the parentheses, and the tokens following
 // the closing parenthesis (excluding the trailing EOF).
 func callSignature(toks []token.Token) (name string, inner, rest []token.Token, ok bool) {
-	if len(toks) < 3 || toks[0].Kind != token.IDENT || toks[1].Kind != token.LPAREN {
+	// The '(' must be glued to the identifier (CSS function-token rule), so a
+	// declaration like `margin (10px)` is not mistaken for a mixin call.
+	if len(toks) < 3 || toks[0].Kind != token.IDENT || toks[1].Kind != token.LPAREN ||
+		toks[1].SpaceBefore {
 		return "", nil, nil, false
 	}
 	depth := 0

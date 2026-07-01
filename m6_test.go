@@ -24,6 +24,11 @@ func TestM6Correctness(t *testing.T) {
 		{"important pretty-less", "a\n  color red !important", "a{color:red!important}"},
 		{"important keeps value", "a\n  margin 0 auto !important", "a{margin:0 auto!important}"},
 
+		// whitespace-sensitive call parens: `f(x)` is a call, `f (x)` a list
+		{"spaced paren is list", "g = 12px\na\n  padding g (g * 2)", "a{padding:12px 24px}"},
+		{"spaced paren declaration", "a\n  margin (10px)", "a{margin:10px}"},
+		{"glued paren is call", "a\n  color rgba(0,0,0,.5)", "a{color:rgba(0,0,0,.5)}"},
+
 		// whitespace-sensitive -/+
 		{"space-dash is list", "a\n  margin 10px -5px", "a{margin:10px -5px}"},
 		{"binary subtraction", "a\n  width 10px - 5px", "a{width:5px}"},

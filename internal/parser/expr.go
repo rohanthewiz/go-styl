@@ -171,7 +171,9 @@ func (p *exprParser) parsePrimary() (ast.Expr, error) {
 		return &ast.StringLit{Value: t.Text, Quote: t.Quote}, nil
 	case token.IDENT:
 		p.next()
-		if p.cur().Kind == token.LPAREN {
+		// A call requires the '(' glued to the identifier (CSS function-token
+		// rule): `gutter (x)` is a space list, `gutter(x)` is a call.
+		if p.cur().Kind == token.LPAREN && !p.cur().SpaceBefore {
 			args, err := p.parseArgs()
 			if err != nil {
 				return nil, err
