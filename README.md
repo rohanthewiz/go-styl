@@ -248,6 +248,37 @@ go test -v ./difftest           # prints the compatibility score
 
 (The test skips itself when node or the stylus package is absent.)
 
+## Benchmarks
+
+Two layers:
+
+```sh
+go test -bench . -run xxx       # Go-native benchmarks (examples + synthetic sheets)
+go run ./bench                  # go-styl vs reference stylus over the shared corpus
+```
+
+`go run ./bench` compiles every corpus file plus generated synthetic sheets
+(`internal/benchgen`) with both compilers — go-styl in-process, reference
+stylus timed inside a single node process — from in-memory source with the
+filename set, so both pay import I/O but neither re-reads the top-level file,
+and node startup is excluded (reported separately). Files only one side
+compiles (go-styl extensions, reference-stylus crashes) are skipped.
+
+Representative results (Apple M1 Pro, stylus 0.64.0 on node 22):
+
+| input | go-styl | stylus | speedup |
+|---|---|---|---|
+| small sheets (~0.2–0.8 KB) | 3–32 µs | 380–710 µs | 18–140× |
+| synthetic, 100 components (~20 KB) | 1.7 ms | 10.1 ms | 5.8× |
+| synthetic, 400 components (~80 KB) | 7.3 ms | 42 ms | 5.7× |
+| whole 29-file corpus, one compile each | 10 ms | 68 ms | 6.8× |
+
+Geomean per-file speedup is ~24×, dominated by reference stylus's ~0.4 ms
+per-compile floor (it re-imports its own built-in `.styl` function library on
+every render); on large sheets the steady-state throughput advantage is
+~5.7×. A stylus CLI invocation additionally pays ~40 ms of node startup that
+go-styl doesn't have.
+
 ## Architecture
 
 ```
@@ -278,6 +309,7 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
   literal `/` in property values, `**`, ranges (`1..3`), color arithmetic,
   implicit returns, transparent mixins, `spin()`, compressed zero-unit strip
 - [x] **M11** WASM playground (`playground/`, deployed via GitHub Pages)
+- [x] **M12** Benchmarks: Go bench suite + `bench/` comparison vs reference stylus
 - [ ] Future: value-level source mapping, deeper compress parity, more built-ins
 
 ## License
