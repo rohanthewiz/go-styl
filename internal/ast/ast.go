@@ -97,6 +97,14 @@ type Return struct {
 	Line, Col int // 1-based source position
 }
 
+// ExprStmt is a bare expression in statement position (e.g. `n * 2` as a
+// function body's last line). Its value becomes the enclosing function's
+// implicit return value; outside a function body it evaluates and is dropped.
+type ExprStmt struct {
+	X         Expr
+	Line, Col int // 1-based source position
+}
+
 // Extend records an `@extend` (or `@extends`) request: the current rule's
 // selectors should be grafted onto every rule matching Target. Target is a raw
 // selector string, e.g. ".message" or a "$placeholder" name.
@@ -144,6 +152,8 @@ func Pos(s Stmt) (line, col int) {
 		return n.Line, n.Col
 	case *Return:
 		return n.Line, n.Col
+	case *ExprStmt:
+		return n.Line, n.Col
 	case *Extend:
 		return n.Line, n.Col
 	case *Import:
@@ -163,6 +173,7 @@ func (*MixinCall) stmtNode()   {}
 func (*If) stmtNode()          {}
 func (*For) stmtNode()         {}
 func (*Return) stmtNode()      {}
+func (*ExprStmt) stmtNode()    {}
 func (*Extend) stmtNode()      {}
 func (*Import) stmtNode()      {}
 func (*AtRule) stmtNode()      {}

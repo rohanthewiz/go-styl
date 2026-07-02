@@ -5,6 +5,7 @@ package eval
 import (
 	"fmt"
 	"io/fs"
+	"math"
 	"slices"
 	"strings"
 
@@ -73,6 +74,11 @@ type execCtx struct {
 	file     string      // source file this block's statements came from
 	ret      value.Value
 	returned bool
+	// mixin is the name of the mixin whose body is executing, if any. A
+	// declaration matching it stays a plain property instead of a transparent
+	// call, so the canonical `border-radius(n)` / `border-radius n` mixin
+	// pattern does not recurse (stylus behaves the same).
+	mixin string
 }
 
 // Evaluate evaluates a stylesheet and returns the rendered CSS.
@@ -192,6 +198,16 @@ func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 		if ctx.rule == nil {
 			return fmt.Errorf("property %q must appear inside a selector", s.Property)
 		}
+		// Transparent mixin call: a declaration whose property names a mixin
+		// in scope invokes it (`border-radius 3px`), list values becoming the
+		// arguments — except the executing mixin's own name, which stays a
+		// plain property.
+		if s.Property != ctx.mixin {
+			if _, ok := ctx.scope.GetFunc(s.Property); ok {
+				call := &ast.MixinCall{Name: s.Property, Args: transparentArgs(s.Value), Line: s.Line, Col: s.Col}
+				return ev.evalMixinCall(call, ctx)
+			}
+		}
 		prop, err := ev.interpolate(s.Property, ctx.scope)
 		if err != nil {
 			return err
@@ -218,6 +234,16 @@ func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 		return ev.evalIf(s, ctx)
 	case *ast.For:
 		return ev.evalFor(s, ctx)
+	case *ast.ExprStmt:
+		// A bare expression: its value becomes the enclosing function's
+		// implicit return (the last one evaluated wins); elsewhere it is
+		// evaluated and dropped.
+		v, err := ev.evalExpr(s.X, ctx.scope)
+		if err != nil {
+			return err
+		}
+		ctx.ret = v
+		return nil
 	case *ast.Return:
 		if s.Value == nil {
 			ctx.ret = value.Null{}
@@ -287,7 +313,7 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 	*ctx.sink = append(*ctx.sink, rule)
 	ev.rules = append(ev.rules, rule)
 
-	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, sink: ctx.sink, dir: ctx.dir, file: ctx.file}
+	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, sink: ctx.sink, dir: ctx.dir, file: ctx.file, mixin: ctx.mixin}
 	if err := ev.execBlock(rs.Body, child); err != nil {
 		return err
 	}
@@ -339,11 +365,29 @@ func (ev *evaluator) evalFor(s *ast.For, ctx *execCtx) error {
 	return nil
 }
 
+// transparentArgs converts a declaration value into mixin-call arguments:
+// list items (space- or comma-separated) become separate arguments, as in
+// reference Stylus (`m 1px 2px` and `m 1px, 2px` both call m(1px, 2px)).
+func transparentArgs(v ast.Expr) []ast.Expr {
+	if l, ok := v.(*ast.List); ok {
+		return l.Items
+	}
+	return []ast.Expr{v}
+}
+
 // evalMixinCall invokes a function/mixin in statement position, emitting its body
 // into the current rule and selector context.
 func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 	cl, ok := ctx.scope.GetFunc(s.Name)
 	if !ok {
+		// A bare identifier naming a variable is an expression statement: its
+		// value becomes the implicit return (a function body ending in `n`).
+		if len(s.Args) == 0 {
+			if v, isVar := ctx.scope.Get(s.Name); isVar {
+				ctx.ret = v
+				return nil
+			}
+		}
 		candidates := ctx.scope.FuncNames()
 		for name := range builtin.Registry {
 			candidates = append(candidates, name)
@@ -378,7 +422,7 @@ func (ev *evaluator) invoke(cl *Closure, args []value.Value, emit *execCtx) (val
 	}
 	// Body statements' positions refer to the definition site, so error
 	// positioning uses the closure's file rather than the caller's.
-	fctx := &execCtx{scope: fscope, file: cl.File}
+	fctx := &execCtx{scope: fscope, file: cl.File, mixin: cl.Def.Name}
 	if emit != nil {
 		fctx.rule = emit.rule
 		fctx.parents = emit.parents
@@ -553,13 +597,18 @@ func (ev *evaluator) evalBinary(b *ast.Binary, scope *Scope) (value.Value, error
 	}
 
 	switch b.Op {
-	case token.PLUS, token.MINUS, token.STAR, token.SLASH, token.PERCENT:
+	case token.PLUS, token.MINUS, token.STAR, token.POW, token.SLASH, token.PERCENT:
 		ln, lok := l.(*value.Number)
 		rn, rok := r.(*value.Number)
 		if lok && rok {
 			return value.Arith(opText(b.Op), ln, rn)
 		}
+		if lc, isColor := l.(*value.Color); isColor {
+			return value.ColorArith(opText(b.Op), lc, r)
+		}
 		return nil, fmt.Errorf("cannot apply %q to %s and %s", opText(b.Op), l.TypeName(), r.TypeName())
+	case token.DOTDOT, token.ELLIPSIS:
+		return evalRange(b.Op, l, r)
 	case token.EQ:
 		return &value.Bool{Val: l.CSS(true) == r.CSS(true)}, nil
 	case token.NEQ:
@@ -638,10 +687,45 @@ func opText(k token.Kind) string {
 		return "-"
 	case token.STAR:
 		return "*"
+	case token.POW:
+		return "**"
 	case token.SLASH:
 		return "/"
 	case token.PERCENT:
 		return "%"
 	}
 	return "?"
+}
+
+// maxRangeLen bounds materialized ranges so a fuzzer's 1..1e9 errors out
+// instead of exhausting memory.
+const maxRangeLen = 65536
+
+// evalRange materializes `a..b` (inclusive) or `a...b` (excludes b) as a list
+// stepping by 1, descending when a > b. The left operand's unit wins.
+func evalRange(op token.Kind, l, r value.Value) (value.Value, error) {
+	ln, lok := l.(*value.Number)
+	rn, rok := r.(*value.Number)
+	if !lok || !rok {
+		return nil, fmt.Errorf("range bounds must be numbers, got %s and %s", l.TypeName(), r.TypeName())
+	}
+	if math.Abs(rn.Num-ln.Num) > maxRangeLen {
+		return nil, fmt.Errorf("range %v..%v exceeds %d elements", ln.Num, rn.Num, maxRangeLen)
+	}
+	unit := ln.Unit
+	if unit == "" {
+		unit = rn.Unit
+	}
+	step := 1.0
+	if rn.Num < ln.Num {
+		step = -1
+	}
+	var items []value.Value
+	for n := ln.Num; (step > 0 && n <= rn.Num) || (step < 0 && n >= rn.Num); n += step {
+		if op == token.ELLIPSIS && n == rn.Num {
+			break
+		}
+		items = append(items, &value.Number{Num: n, Unit: unit})
+	}
+	return &value.List{Items: items}, nil
 }

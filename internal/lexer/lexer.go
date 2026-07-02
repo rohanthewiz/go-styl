@@ -293,6 +293,7 @@ func (l *lexer) peekIsDigit(n int) bool { return unicode.IsDigit(l.peek(n)) }
 var twoCharOps = map[string]token.Kind{
 	"==": token.EQ, "!=": token.NEQ, "<=": token.LE, ">=": token.GE,
 	"&&": token.AND, "||": token.OR, "?=": token.ASSIGNQ,
+	"**": token.POW, "..": token.DOTDOT, // ("..." is checked before this map)
 }
 
 var oneCharOps = map[rune]token.Kind{

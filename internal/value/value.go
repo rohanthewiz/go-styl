@@ -67,6 +67,9 @@ func (s *SlashList) CSS(pretty bool) string {
 func (n *Number) TypeName() string { return "unit" }
 func (n *Number) String() string   { return n.CSS(true) }
 func (n *Number) CSS(pretty bool) string {
+	if !pretty && n.Num == 0 && n.Unit != "" && !zeroKeepUnits[strings.ToLower(n.Unit)] {
+		return "0" // compressed zero lengths drop the unit, as in stylus
+	}
 	s := strconv.FormatFloat(n.Num, 'f', -1, 64)
 	if !pretty {
 		switch {
@@ -77,6 +80,14 @@ func (n *Number) CSS(pretty bool) string {
 		}
 	}
 	return s + n.Unit
+}
+
+// zeroKeepUnits are units that stay on a zero value even compressed: unlike
+// lengths, 0% / 0s / 0deg / 0fr are not interchangeable with plain 0.
+var zeroKeepUnits = map[string]bool{
+	"%": true, "s": true, "ms": true, "deg": true, "rad": true, "grad": true,
+	"turn": true, "fr": true, "dpi": true, "dpcm": true, "dppx": true,
+	"hz": true, "khz": true, "x": true, "db": true,
 }
 
 // --- Color ---

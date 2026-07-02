@@ -261,10 +261,16 @@ func startsTerm(k token.Kind) bool {
 // infixBP returns the binding power of an infix operator, or 0 if not infix.
 func infixBP(k token.Kind) int {
 	switch k {
-	case token.STAR, token.SLASH, token.PERCENT:
+	// `**` shares the multiplicative level and associates left, as in
+	// reference Stylus: 2 * 3 ** 2 is 36 and 2 ** 3 ** 2 is 64.
+	case token.STAR, token.POW, token.SLASH, token.PERCENT:
 		return 60
 	case token.PLUS, token.MINUS:
 		return 50
+	// Ranges bind below arithmetic (1..n + 1 is 1..(n+1)) but above
+	// comparisons.
+	case token.DOTDOT, token.ELLIPSIS:
+		return 45
 	case token.LT, token.GT, token.LE, token.GE:
 		return 40
 	case token.EQ, token.NEQ:

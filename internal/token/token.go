@@ -26,6 +26,7 @@ const (
 	PLUS    // +
 	MINUS   // -
 	STAR    // *
+	POW     // **
 	SLASH   // /
 	PERCENT // %
 	EQ      // ==
@@ -47,7 +48,8 @@ const (
 	COLON    // :
 	SEMI     // ;
 	AMP      // &  (parent-selector reference)
-	ELLIPSIS // ... (rest parameter)
+	DOTDOT   // .. (inclusive range)
+	ELLIPSIS // ... (rest parameter, or exclusive range in expressions)
 
 	COMMENT // /* ... */ block comment, preserved in output
 )
@@ -66,10 +68,11 @@ var kindNames = map[Kind]string{
 	ILLEGAL: "ILLEGAL", EOF: "EOF", NEWLINE: "NEWLINE", INDENT: "INDENT", DEDENT: "DEDENT",
 	IDENT: "IDENT", NUMBER: "NUMBER", STRING: "STRING", COLOR: "COLOR", AT: "AT",
 	ASSIGN: "ASSIGN", ASSIGNQ: "ASSIGNQ", PLUS: "PLUS", MINUS: "MINUS", STAR: "STAR",
-	SLASH: "SLASH", PERCENT: "PERCENT", EQ: "EQ", NEQ: "NEQ", LT: "LT", GT: "GT",
+	POW: "POW", SLASH: "SLASH", PERCENT: "PERCENT", EQ: "EQ", NEQ: "NEQ", LT: "LT", GT: "GT",
 	LE: "LE", GE: "GE", AND: "AND", OR: "OR", NOT: "NOT",
 	LPAREN: "LPAREN", RPAREN: "RPAREN", LBRACKET: "LBRACKET", RBRACKET: "RBRACKET",
-	COMMA: "COMMA", COLON: "COLON", SEMI: "SEMI", AMP: "AMP", ELLIPSIS: "ELLIPSIS", COMMENT: "COMMENT",
+	COMMA: "COMMA", COLON: "COLON", SEMI: "SEMI", AMP: "AMP",
+	DOTDOT: "DOTDOT", ELLIPSIS: "ELLIPSIS", COMMENT: "COMMENT",
 }
 
 // String returns the token kind's name (handy in tests and errors).

@@ -63,9 +63,9 @@ func ParseColor(text string) (*Color, error) {
 	return c, nil
 }
 
-// Arith applies a binary arithmetic operator (one of + - * / %) to two numbers,
-// with Stylus-style unit coercion: the non-empty unit wins; if both are present
-// and differ, the left operand's unit is kept.
+// Arith applies a binary arithmetic operator (one of + - * ** / %) to two
+// numbers, with Stylus-style unit coercion: the non-empty unit wins; if both
+// are present and differ, the left operand's unit is kept.
 func Arith(op string, a, b *Number) (*Number, error) {
 	var r float64
 	switch op {
@@ -75,6 +75,8 @@ func Arith(op string, a, b *Number) (*Number, error) {
 		r = a.Num - b.Num
 	case "*":
 		r = a.Num * b.Num
+	case "**":
+		r = math.Pow(a.Num, b.Num)
 	case "/":
 		if b.Num == 0 {
 			return nil, fmt.Errorf("division by zero")
@@ -91,6 +93,64 @@ func Arith(op string, a, b *Number) (*Number, error) {
 		unit = b.Unit
 	}
 	return &Number{Num: r, Unit: unit}, nil
+}
+
+// ColorArith applies + - * / channel-wise to a color, matching reference
+// Stylus: color op color combines R/G/B and alpha pair-wise; color op number
+// applies the op between each R/G/B channel and the number, leaving alpha.
+// Channels round and clamp to [0,255] (only mix/tint/shade floor).
+func ColorArith(op string, c *Color, rhs Value) (Value, error) {
+	apply := func(a, b float64) (float64, error) {
+		switch op {
+		case "+":
+			return a + b, nil
+		case "-":
+			return a - b, nil
+		case "*":
+			return a * b, nil
+		case "/":
+			if b == 0 {
+				return 0, fmt.Errorf("division by zero")
+			}
+			return a / b, nil
+		}
+		return 0, fmt.Errorf("cannot apply %q to a color", op)
+	}
+	channels := func(r2, g2, b2 float64) (*Color, error) {
+		r, err := apply(float64(c.R), r2)
+		if err != nil {
+			return nil, err
+		}
+		g, err := apply(float64(c.G), g2)
+		if err != nil {
+			return nil, err
+		}
+		b, err := apply(float64(c.B), b2)
+		if err != nil {
+			return nil, err
+		}
+		return &Color{R: roundByte(r), G: roundByte(g), B: roundByte(b), A: c.A}, nil
+	}
+	switch r := rhs.(type) {
+	case *Color:
+		out, err := channels(float64(r.R), float64(r.G), float64(r.B))
+		if err != nil {
+			return nil, err
+		}
+		// Alpha follows stylus's RGBA.operate: + adds (clamped); - keeps the
+		// left alpha when the right operand is opaque, else subtracts; * and /
+		// keep the left alpha.
+		switch {
+		case op == "+":
+			out.A = clamp01(c.A + r.A)
+		case op == "-" && r.A != 1:
+			out.A = clamp01(c.A - r.A)
+		}
+		return out, nil
+	case *Number:
+		return channels(r.Num, r.Num, r.Num)
+	}
+	return nil, fmt.Errorf("cannot apply %q to color and %s", op, rhs.TypeName())
 }
 
 // Truthy reports a value's boolean interpretation, following Stylus semantics:

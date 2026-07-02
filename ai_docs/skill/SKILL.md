@@ -162,12 +162,26 @@ shadow names locally.
 
 ## 4. Arithmetic, units, lists
 
-Unit-aware `+ - * / %` and comparisons (`== != < > <= >=`), `&&`, `||`, `!`.
+Unit-aware `+ - * ** / %` and comparisons (`== != < > <= >=`), `&&`, `||`, `!`.
+`**` shares the multiplicative precedence level and associates left
+(`2 * 3 ** 2` is 36).
 
 ```stylus
 w = 10px
 x = w * 2 + 4px      // 24px   (result unit comes from the left operand)
 y = (100% / 3)        // 33.333…%
+z = 2 ** 10           // 1024
+```
+
+**`/` in property values is literal CSS** (`font 14px/1.5` stays `14px/1.5`,
+operands still evaluate) — parenthesize to divide: `margin (h / 2) w`.
+Assignments, conditions, and call arguments always divide.
+
+Colors do channel-wise arithmetic with colors and numbers:
+
+```stylus
+color #111 + #222     // #333 (clamped at #fff)
+color #333 + 10       // #3d3d3d (number applies to each channel)
 ```
 
 **Whitespace-sensitive `-`/`+`** (important): a sign with a space before and none
@@ -256,6 +270,10 @@ for i in 1 2 3 4         // for val in list
 for shade, idx in #eee #ccc #999   // for val, index in list
   .swatch-{idx}
     background shade
+
+for n in 1..3            // ranges: 1..3 inclusive, 0...3 excludes the bound
+  .w-{n}                 // (descending like 3..1 also works)
+    width unit(n * 10, '%')
 ```
 
 ---
@@ -271,6 +289,9 @@ double(n) = n * 2                 // single-line function
 
 golden(n)                          // block function
   return n * 1.618
+
+triple(n)                          // implicit return: the body's last
+  n * 3                            // expression is the value
 
 size(w, h = w)                     // mixin; `h` defaults to `w`
   width w
@@ -292,9 +313,15 @@ stack(props...)                    // rest param collects remaining args as a li
 
 .banner
   +size(100%, 200px)               // mixins may also be invoked with a leading +
+
+.card
+  size 40px 20px                   // transparent call: `name args` invokes a
+                                   // mixin in scope (list items become args)
 ```
 
 Parameters support defaults (`h = w`) and a single trailing rest param (`props...`).
+Inside a mixin's body its own name is a plain property, so the classic
+vendor-prefix pattern (`border-radius(n)` emitting `border-radius n`) works.
 
 ---
 

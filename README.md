@@ -259,8 +259,10 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] **M7** Positioned errors (`file:line:col`, serr attributes) + fuzz hardening
 - [x] **M8** `fs.FS`/embed sources, `Build` API (deps), HTTP middleware (`stylserve`/`stylhttp`)
 - [x] **M9** Differential testing vs reference Stylus (compatibility score in CI)
-- [ ] Future: close `difftest/known_diffs.txt` compat gaps, value-level source
-  mapping, deeper compress parity, more built-ins
+- [x] **M10** Stylus parity: for-loop binding order, adjust()/mix color math,
+  literal `/` in property values, `**`, ranges (`1..3`), color arithmetic,
+  implicit returns, transparent mixins, `spin()`, compressed zero-unit strip
+- [ ] Future: value-level source mapping, deeper compress parity, more built-ins
 
 ## License
 

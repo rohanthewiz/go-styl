@@ -263,6 +263,11 @@ func parseLine(ln *line) (ast.Stmt, error) {
 
 	// Declaration: `property value...`, with an optional colon after the property.
 	if toks[0].Kind != token.IDENT {
+		// Not declaration-shaped: a bare expression statement (`700` or
+		// `(x + y) / 2` as a function body's implicit return value).
+		if e, exprErr := parseExpr(toks, ln.lineNo); exprErr == nil {
+			return &ast.ExprStmt{X: e, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		}
 		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "expected a property declaration, got %q", text)
 	}
 	valToks := toks[1:]
@@ -272,6 +277,11 @@ func parseLine(ln *line) (ast.Stmt, error) {
 	valToks, important := stripImportant(valToks)
 	val, err := parsePropExpr(valToks, ln.lineNo)
 	if err != nil {
+		// Not `property value` after all: lines like `n * 2` are a bare
+		// expression statement when the whole line parses as one.
+		if e, exprErr := parseExpr(toks, ln.lineNo); exprErr == nil {
+			return &ast.ExprStmt{X: e, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		}
 		return nil, err
 	}
 	return &ast.Declaration{Property: toks[0].Text, Value: val, Important: important, Line: ln.lineNo, Col: ln.indent + 1}, nil
