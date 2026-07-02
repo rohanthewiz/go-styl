@@ -197,6 +197,8 @@ See [`examples/README.md`](examples/README.md) for the full index.
 
 ## Playground
 
+**Try it live: <https://rohanthewiz.github.io/go-styl/>**
+
 [`playground/`](playground/) is a browser playground — the compiler built for
 WebAssembly behind a two-pane live editor with the examples bundled in:
 
