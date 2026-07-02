@@ -195,6 +195,19 @@ go run ./cmd/styl -compress examples/05-builtins.styl
 
 See [`examples/README.md`](examples/README.md) for the full index.
 
+## Playground
+
+[`playground/`](playground/) is a browser playground — the compiler built for
+WebAssembly behind a two-pane live editor with the examples bundled in:
+
+```sh
+./playground/build.sh        # builds playground/styl.wasm (+ wasm_exec.js)
+go run ./playground/serve    # http://localhost:8080
+```
+
+A GitHub Actions workflow ([pages.yml](.github/workflows/pages.yml)) deploys it
+to GitHub Pages on push.
+
 ## Limitations
 
 Things to be aware of:
@@ -262,6 +275,7 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] **M10** Stylus parity: for-loop binding order, adjust()/mix color math,
   literal `/` in property values, `**`, ranges (`1..3`), color arithmetic,
   implicit returns, transparent mixins, `spin()`, compressed zero-unit strip
+- [x] **M11** WASM playground (`playground/`, deployed via GitHub Pages)
 - [ ] Future: value-level source mapping, deeper compress parity, more built-ins
 
 ## License

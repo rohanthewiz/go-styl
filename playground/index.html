@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>go-styl playground</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f26; --edge: #2c313c;
+    --fg: #d8dde6; --dim: #8b93a3; --accent: #63b3ed;
+    --err-bg: #3b1f24; --err-edge: #a33c4b; --err-fg: #ffb4bd;
+    --ok: #7ec699;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8; --panel: #ffffff; --edge: #d7dbe2;
+      --fg: #22262e; --dim: #667085; --accent: #2b6cb0;
+      --err-bg: #fdeef0; --err-edge: #d3546a; --err-fg: #9b1c32;
+      --ok: #2f855a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.45 system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+    padding: .55rem .9rem; border-bottom: 1px solid var(--edge);
+    background: var(--panel);
+  }
+  header h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  header .meta { color: var(--dim); font-size: .8rem; }
+  header label { color: var(--dim); font-size: .85rem; display: inline-flex; align-items: center; gap: .3rem; cursor: pointer; }
+  header select {
+    background: var(--bg); color: var(--fg); border: 1px solid var(--edge);
+    border-radius: 5px; padding: .25rem .4rem; font-size: .85rem;
+  }
+  header .spacer { flex: 1; }
+  header a { color: var(--accent); text-decoration: none; font-size: .85rem; }
+  main { flex: 1; display: flex; min-height: 0; }
+  .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .pane + .pane { border-left: 1px solid var(--edge); }
+  .pane .bar {
+    padding: .3rem .9rem; font-size: .75rem; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--dim);
+    border-bottom: 1px solid var(--edge); background: var(--panel);
+    display: flex; gap: .8rem; align-items: baseline;
+  }
+  .pane .bar .stat { margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .pane .bar .stat.ok { color: var(--ok); }
+  textarea, pre.out {
+    flex: 1; margin: 0; padding: .8rem .9rem; border: 0; resize: none;
+    background: transparent; color: var(--fg);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre; overflow: auto; tab-size: 2; outline: none;
+  }
+  #error {
+    display: none; margin: 0; padding: .6rem .9rem;
+    background: var(--err-bg); color: var(--err-fg);
+    border-top: 1px solid var(--err-edge);
+    font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+  }
+  details#mapbox { border-top: 1px solid var(--edge); background: var(--panel); }
+  details#mapbox summary { padding: .35rem .9rem; font-size: .78rem; color: var(--dim); cursor: pointer; user-select: none; }
+  details#mapbox pre {
+    margin: 0; padding: .5rem .9rem; max-height: 9rem; overflow: auto;
+    font: 11.5px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--dim);
+    white-space: pre-wrap; word-break: break-all;
+  }
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--dim); font-size: .95rem; z-index: 10;
+    transition: opacity .2s;
+  }
+  @media (max-width: 760px) {
+    main { flex-direction: column; }
+    .pane + .pane { border-left: 0; border-top: 1px solid var(--edge); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>go-styl <span>playground</span></h1>
+  <label for="example">example
+    <select id="example"><option value="">— pick —</option></select>
+  </label>
+  <label><input type="checkbox" id="pretty" checked> pretty</label>
+  <label><input type="checkbox" id="merge"> merge duplicates</label>
+  <label><input type="checkbox" id="sourcemap"> source map</label>
+  <span class="spacer"></span>
+  <span class="meta" id="version"></span>
+  <a href="https://github.com/rohanthewiz/go-styl">github.com/rohanthewiz/go-styl</a>
+</header>
+
+<main>
+  <section class="pane">
+    <div class="bar">stylus in<span class="stat" id="srcstat"></span></div>
+    <textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off"
+      placeholder="// type Stylus here"></textarea>
+    <pre id="error"></pre>
+  </section>
+  <section class="pane">
+    <div class="bar">css out<span class="stat" id="outstat"></span></div>
+    <pre class="out" id="out"></pre>
+    <details id="mapbox" hidden><summary>source map</summary><pre id="map"></pre></details>
+  </section>
+</main>
+
+<div id="loading">loading compiler…</div>
+
+<script src="wasm_exec.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const src = $('src'), out = $('out'), errBox = $('error');
+  const DEFAULT = `// welcome to go-styl — a pure-Go Stylus compiler
+primary = #e91e63
+
+button(bg = primary)
+  background bg
+  color white
+  border-radius 4px
+  &:hover
+    background darken(bg, 10%)
+
+.btn
+  button()
+.btn-muted
+  button(#607d8b)
+`;
+
+  // --- compile loop (debounced; queued until wasm is ready) -----------------
+  let ready = false, timer = 0;
+  function schedule() { clearTimeout(timer); timer = setTimeout(compile, 120); }
+  function compile() {
+    if (!ready) return;
+    try { localStorage.setItem('go-styl-src', src.value); } catch (_) {}
+    const r = goStyl.compile(src.value, {
+      pretty: $('pretty').checked,
+      mergeDuplicates: $('merge').checked,
+      sourcemap: $('sourcemap').checked,
+    });
+    $('srcstat').textContent = src.value.length + ' chars';
+    if (r.error !== undefined) {
+      errBox.textContent = r.error;
+      errBox.style.display = 'block';
+      $('outstat').textContent = '';
+      $('outstat').className = 'stat';
+      out.style.opacity = '0.45';
+      return;
+    }
+    errBox.style.display = 'none';
+    out.style.opacity = '';
+    out.textContent = r.css;
+    $('outstat').textContent = r.css.length + ' chars · ' + r.ms.toFixed(2) + ' ms';
+    $('outstat').className = 'stat ok';
+    const mapbox = $('mapbox');
+    if (r.map !== undefined) {
+      mapbox.hidden = false;
+      $('map').textContent = r.map;
+    } else {
+      mapbox.hidden = true;
+    }
+  }
+
+  // --- wiring ----------------------------------------------------------------
+  src.addEventListener('input', schedule);
+  for (const id of ['pretty', 'merge', 'sourcemap'])
+    $(id).addEventListener('change', compile);
+
+  // Tab inserts two spaces (Stylus is indentation-based).
+  src.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const { selectionStart: s, selectionEnd: t, value } = src;
+    src.value = value.slice(0, s) + '  ' + value.slice(t);
+    src.selectionStart = src.selectionEnd = s + 2;
+    schedule();
+  });
+
+  $('example').addEventListener('change', e => {
+    const ex = examplesByName[e.target.value];
+    if (!ex) return;
+    src.value = ex.source;
+    compile();
+  });
+
+  let examplesByName = {};
+  window.goStylReady = () => {
+    ready = true;
+    $('version').textContent = 'build ' + goStyl.version;
+    const sel = $('example');
+    for (const ex of goStyl.examples()) {
+      examplesByName[ex.name] = ex;
+      const opt = document.createElement('option');
+      opt.value = ex.name;
+      opt.textContent = ex.name;
+      sel.appendChild(opt);
+    }
+    const el = $('loading');
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 220);
+    compile();
+  };
+
+  let saved = null;
+  try { saved = localStorage.getItem('go-styl-src'); } catch (_) {}
+  src.value = saved || DEFAULT;
+
+  const go = new Go();
+  // Prefer streaming; fall back for servers that mislabel .wasm's MIME type.
+  const load = WebAssembly.instantiateStreaming
+    ? WebAssembly.instantiateStreaming(fetch('styl.wasm'), go.importObject)
+        .catch(() => fetch('styl.wasm').then(r => r.arrayBuffer())
+          .then(buf => WebAssembly.instantiate(buf, go.importObject)))
+    : fetch('styl.wasm').then(r => r.arrayBuffer())
+        .then(buf => WebAssembly.instantiate(buf, go.importObject));
+  load.then(r => go.run(r.instance))
+    .catch(err => { $('loading').textContent = 'failed to load styl.wasm — ' + err; });
+})();
+</script>
+</body>
+</html>

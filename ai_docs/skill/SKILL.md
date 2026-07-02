@@ -112,6 +112,22 @@ s.Get("/css/*path", stylus.Handler(stylserve.Options{FS: sub}))
 `stylserve.Options`: `Dir` **or** `FS` (source root), `IncludePaths`, `Pretty`
 (default compressed), `MergeDuplicates`, `SourceMaps`.
 
+### WASM playground (`playground/`)
+
+The compiler builds for `js/wasm`; `playground/` is a browser playground with
+a live two-pane editor, the bundled examples (imports resolve against the
+embedded `examples.FS`), positioned errors, and source-map output.
+
+```shell
+./playground/build.sh        # playground/styl.wasm + wasm_exec.js
+go run ./playground/serve    # http://localhost:8080
+```
+
+In the page, `goStyl.compile(src, {pretty, mergeDuplicates, sourcemap})`
+returns `{css, map?, ms}` or `{error, file, line, col, msg, ms}`;
+`goStyl.examples()` lists the bundled examples. Deployed to GitHub Pages by
+`.github/workflows/pages.yml` on push to main.
+
 ---
 
 ## 2. Two syntaxes
