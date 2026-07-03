@@ -23,7 +23,11 @@ variables to `--vars` under `:root` instead of inlining them — Stylus predates
 custom properties, and bridging the two (compile-time math *over*
 runtime-themable tokens, auto dark-mode blocks) modernizes the language itself.
 
-## 2. Critical CSS per response — the `element` synergy
+## 2. Critical CSS per response — the `element` synergy ✅ core SHIPPED as M15
+
+*(M15: `styl.Prune`/`PruneFile` + `styl.UsedFromHTML`. Still open: an
+element/rweb middleware that renders, collects, prunes, and inlines in one
+hook, plus used-set-keyed caching.)*
 
 Because HTML generation (element) and CSS compilation both run in-process, we
 can do what the Node world needs Puppeteer for: render the page, collect the

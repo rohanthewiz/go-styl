@@ -52,6 +52,9 @@ Under active development -- consider this Alpha. The compiler currently supports
   [Runtime theming](#runtime-theming)): inject Go values as Stylus variables
   (`Options.Globals`) and expose theme tokens as CSS custom properties
   (`Options.CustomProperties`, compiling direct references to `var(--name)`)
+- **Critical CSS** (see [Critical CSS](#critical-css-stylprune)): `styl.Prune`
+  compiles only the rules a rendered page actually uses
+  (`styl.UsedFromHTML(page)`) — per-response inline CSS with no headless browser
 
 See [the roadmap](#roadmap) for what's next.
 
@@ -248,6 +251,38 @@ The same data is available programmatically: `styl.Extract` /
 `styl.ExtractFile` return a `Manifest` (sorted classes, IDs, keyframes names,
 and root variables with their final values, honoring `Globals` and
 `@import`), and `Manifest.GoSource(pkg)` renders the constants file.
+
+## Critical CSS (`styl.Prune`)
+
+Because HTML rendering and CSS compilation both run in-process, go-styl can do
+per-response critical CSS without the headless browser the Node world needs:
+render the page, collect the names it actually uses, and compile a stylesheet
+containing only the matching rules — small enough to inline in `<head>`.
+
+```go
+page := renderPage()                            // element, templates, …
+css, err := styl.Prune(src, styl.UsedFromHTML(page), styl.Options{})
+// <style>…critical css…</style> straight into the response
+```
+
+`UsedFromHTML` scans rendered HTML for tag names, classes, and IDs.
+`Prune` (and `PruneFile`) compiles like `Compile` — `Globals`,
+`CustomProperties`, `@import`, `fs.FS` all honored — then keeps a selector
+only if every class, ID, and tag it requires is present in the `Used` set.
+Pruning errs toward keeping:
+
+- Selectors that require nothing survive: `@font-face`, `:root`, `*`,
+  attribute-only selectors like `[data-theme="dark"]`.
+- Names inside functional pseudo-class arguments are never required —
+  `.btn:not(.disabled)` needs only `btn`.
+- A nil `Used` axis means "unknown, don't prune on it": leave `Tags` nil when
+  pruning against an HTML *fragment* rather than the whole page.
+- `@keyframes` are kept only while a surviving `animation`/`animation-name`
+  declaration references them (vendor-prefixed and quoted names included),
+  and at-rules emptied by pruning disappear.
+
+Compiles cost microseconds, so pruning per response is practical — cache by
+the used-name set when pages share layouts.
 
 ## Serving over HTTP
 
@@ -448,6 +483,8 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
   `CustomProperties` (theme tokens as `:root` `--vars`, direct refs → `var(--name)`)
 - [x] **M14** `styl gen` codegen: typed Go constants for classes/IDs/keyframes/variables
   (`styl.Extract` + `Manifest.GoSource`)
+- [x] **M15** Critical CSS: `styl.Prune` / `PruneFile` + `UsedFromHTML` — per-response
+  stylesheets containing only the rules the rendered page uses
 - [ ] Future: value-level source mapping, deeper compress parity, more built-ins
 
 ## License
