@@ -73,6 +73,14 @@ css, mapJSON, err := styl.CompileFileMap("app.styl", styl.Options{OutFile: "app.
 | `Filename` | `string` | Source path; used in errors and to derive `BaseDir`. `CompileFile` sets it automatically. |
 | `FS` | `fs.FS` | Filesystem sources/`@import` resolve through (e.g. `embed.FS`) instead of the OS. |
 | `SourceMap` | `bool` | Ask `Build`/`BuildFile` to also produce a source map. |
+| `Globals` | `map[string]any` | Go values seeded as root-scope variables before the sheet runs. Strings parse as Stylus value expressions (`"#0af"`, `"10px"`, `"1px solid red"`, `"darken(#0af, 10%)"`); ints/floats ⇒ unitless numbers; bool ⇒ bool; nil ⇒ null. Sheet `=` overrides a global; sheet `?=` is a default the global overrides. **go-styl extension.** |
+| `CustomProperties` | `[]string` | Root-level variables to expose as CSS custom properties: output gains a leading `:root{--name: value}` block (list order, undefined names skipped) and *direct references* compile to `var(--name)`. Compile-time computations (arithmetic, built-ins, comparisons, `{interp}`, media queries) use the concrete value; value lists, `14px/lh` shorthands, pass-through CSS functions, and mixin bodies keep `var(--name)`. **go-styl extension.** |
+
+**Runtime theming** — the two combine for per-tenant/per-user CSS: sheet
+declares `primary ?= #06c`, Go passes
+`Options{Globals: map[string]any{"primary": tenant.Color}, CustomProperties: []string{"primary"}}`;
+output starts `:root{--primary:…}` and refs are `var(--primary)`, so the
+browser can re-theme (dark mode) without recompiling.
 
 ### CLI (`cmd/styl`)
 
@@ -82,10 +90,13 @@ go run ./cmd/styl -compress input.styl    # minified
 go run ./cmd/styl -merge input.styl       # merge duplicate rule bodies
 go run ./cmd/styl -o out.css input.styl   # write to a file
 go run ./cmd/styl -o out.css -sourcemap input.styl  # also writes out.css.map
+go run ./cmd/styl -D primary=#0af -cssvar primary input.styl  # theming (repeatable)
 ```
 
 `-sourcemap` requires `-o`; it writes `<out>.map` and appends a
-`/*# sourceMappingURL=… */` comment to the CSS.
+`/*# sourceMappingURL=… */` comment to the CSS. `-D name=value` defines a
+global (value is a Stylus expression); `-cssvar name` exposes a variable as a
+CSS custom property.
 
 ### Serving over HTTP
 
@@ -110,7 +121,9 @@ s.Get("/css/*path", stylus.Handler(stylserve.Options{FS: sub}))
 ```
 
 `stylserve.Options`: `Dir` **or** `FS` (source root), `IncludePaths`, `Pretty`
-(default compressed), `MergeDuplicates`, `SourceMaps`.
+(default compressed), `MergeDuplicates`, `SourceMaps`, `Globals`,
+`CustomProperties` (theming; fixed per engine so the cache stays valid — run
+one engine per theme for per-tenant CSS).
 
 ### WASM playground (`playground/`)
 

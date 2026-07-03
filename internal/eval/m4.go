@@ -12,6 +12,7 @@ import (
 	"github.com/rohanthewiz/go-styl/internal/css"
 	"github.com/rohanthewiz/go-styl/internal/diag"
 	"github.com/rohanthewiz/go-styl/internal/parser"
+	"github.com/rohanthewiz/go-styl/internal/value"
 )
 
 // interpolate resolves `{expr}` interpolation in a raw string (selector, property
@@ -55,7 +56,10 @@ func (ev *evaluator) evalString(src string, scope *Scope) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return v.CSS(ev.opts.Pretty), nil
+	// Interpolation asks for the value's text; a var(--name) reference would
+	// be invalid in selectors and media queries, so custom-property wrappers
+	// resolve to their compile-time value.
+	return value.Deref(v).CSS(ev.opts.Pretty), nil
 }
 
 // matchBrace returns the index of the '}' matching the '{' at open, or -1 if the

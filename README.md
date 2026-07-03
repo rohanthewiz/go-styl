@@ -48,6 +48,10 @@ Under active development -- consider this Alpha. The compiler currently supports
   caching, ETags/304s, and dev source maps — a `net/http` adapter here
   ([`stylhttp`](stylhttp/)); the [rweb](https://github.com/rohanthewiz/rweb)
   adapter ships with rweb (`rweb/middleware/stylus`)
+- **Runtime theming** (go-styl extensions — see
+  [Runtime theming](#runtime-theming)): inject Go values as Stylus variables
+  (`Options.Globals`) and expose theme tokens as CSS custom properties
+  (`Options.CustomProperties`, compiling direct references to `var(--name)`)
 
 See [the roadmap](#roadmap) for what's next.
 
@@ -122,6 +126,67 @@ css, err = styl.CompileFile("styles/app.styl", styl.Options{FS: styles})
 | `OutFile` | Generated CSS filename recorded in the source map's `file` field. |
 | `FS` | An `fs.FS` (e.g. `embed.FS`) that sources and `@import` resolve through instead of the OS. |
 | `SourceMap` | Ask `Build`/`BuildFile` to also produce a source map. |
+| `Globals` | Go values seeded as root-scope variables before the sheet runs (see [Runtime theming](#runtime-theming)). |
+| `CustomProperties` | Variables to expose as CSS custom properties on `:root` (see [Runtime theming](#runtime-theming)). |
+
+## Runtime theming
+
+Because go-styl compiles in-process in microseconds, stylesheets can be
+parameterized *by your application at runtime* — per tenant, per user, per
+A/B arm — instead of baked at build time. Two options (both go-styl
+extensions) work together:
+
+**`Globals`** seeds Go values as variables in the sheet's root scope. Strings
+are parsed as Stylus value expressions, so colors, units, lists, and even
+function calls work; numbers become unitless numbers, bools are bools. In the
+sheet, declare overridable defaults with `?=`:
+
+```stylus
+// theme.styl
+primary ?= #06c        // default; a Global overrides it
+radius  ?= 4px
+
+.btn
+  background primary
+  border-radius radius
+```
+
+```go
+css, _ := styl.Compile(src, styl.Options{
+    Globals: map[string]any{"primary": "#0af", "radius": "8px"},
+})
+```
+
+**`CustomProperties`** lists theme tokens to expose as CSS custom properties.
+The output gains a leading `:root` block declaring each token, and direct
+references compile to `var(--name)` instead of inlining — so the compiled CSS
+can be re-themed *in the browser* (dark mode, user themes) without
+recompiling:
+
+```go
+css, _ := styl.Compile(src, styl.Options{
+    Globals:          map[string]any{"primary": "#0af"},
+    CustomProperties: []string{"primary", "radius"},
+})
+```
+
+```css
+:root{--primary:#0af;--radius:4px}
+.btn{background:var(--primary);border-radius:var(--radius)}
+```
+
+Uses that must compute at compile time — arithmetic (`radius * 2`),
+built-in calls (`darken(primary, 20%)`), comparisons, `{interpolation}`, and
+media queries — use the token's compile-time value; direct references
+(including inside value lists, `font: 14px/lh` shorthands, and pass-through
+CSS functions like `translateX(x)`) stay `var(--name)`. Mixin arguments keep
+the `var()` reference too, so `bordered(primary)` emits
+`border: 1px solid var(--primary)`.
+
+Both options are available on the CLI (`-D name=value`, `-cssvar name`) and
+in the HTTP middleware (`stylserve.Options.Globals` / `.CustomProperties` —
+fixed per engine, so cached output stays valid; run one engine per theme for
+per-tenant CSS).
 
 ## Serving over HTTP
 
@@ -164,8 +229,9 @@ s.Get("/css/*path", stylus.Handler(stylserve.Options{FS: sub}))
 ```
 
 `stylserve.Options`: `Dir` or `FS` (source root), `IncludePaths`, `Pretty`
-(default compressed), `MergeDuplicates`, `SourceMaps`. Compile errors return
-`500` with the positioned message; unknown paths return `404`.
+(default compressed), `MergeDuplicates`, `SourceMaps`, plus `Globals` and
+`CustomProperties` for [runtime theming](#runtime-theming). Compile errors
+return `500` with the positioned message; unknown paths return `404`.
 
 ## CLI
 
@@ -175,10 +241,13 @@ go run ./cmd/styl -compress input.styl  # minified
 go run ./cmd/styl -merge input.styl     # merge duplicate rule bodies
 go run ./cmd/styl -o out.css input.styl # write to a file
 go run ./cmd/styl -o out.css -sourcemap input.styl  # also writes out.css.map
+go run ./cmd/styl -D primary=#0af -D 'pad=2 * 8px' input.styl  # define globals
+go run ./cmd/styl -cssvar primary -cssvar pad input.styl       # expose as --vars
 ```
 
 `-sourcemap` requires `-o`; it writes `<out>.map` next to the CSS and appends a
-`/*# sourceMappingURL=… */` comment.
+`/*# sourceMappingURL=… */` comment. `-D` and `-cssvar` are repeatable (see
+[Runtime theming](#runtime-theming)).
 
 ## Example
 
@@ -310,6 +379,8 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
   implicit returns, transparent mixins, `spin()`, compressed zero-unit strip
 - [x] **M11** WASM playground (`playground/`, deployed via GitHub Pages)
 - [x] **M12** Benchmarks: Go bench suite + `bench/` comparison vs reference stylus
+- [x] **M13** Runtime theming: `Globals` (Go values as Stylus variables) +
+  `CustomProperties` (theme tokens as `:root` `--vars`, direct refs → `var(--name)`)
 - [ ] Future: value-level source mapping, deeper compress parity, more built-ins
 
 ## License

@@ -26,6 +26,12 @@ type Options struct {
 	BaseDir         string   // directory @import paths resolve against
 	IncludePaths    []string // extra directories searched for @import
 	FS              fs.FS    // when set, @import resolves through it instead of the OS
+	// Globals defines variables in the root scope before the stylesheet
+	// executes (see the public styl.Options.Globals for value conversion).
+	Globals map[string]any
+	// CustomProperties lists root-level variables to expose as CSS custom
+	// properties (see the public styl.Options.CustomProperties).
+	CustomProperties []string
 	// Source-map inputs (used by EvaluateMap/EvaluateFull).
 	SourceMap     bool   // build a source map (EvaluateFull)
 	SourceFile    string // .styl path recorded in the map's "sources"
@@ -59,6 +65,8 @@ type evaluator struct {
 	importing    map[string]bool // absolute paths currently being imported (cycle guard)
 	depth        int             // current function/mixin call depth
 	deps         []string        // resolved paths of every inlined @import, in order
+	customProps  map[string]bool // variable names exposed as CSS custom properties
+	rootScope    *Scope          // the stylesheet's root scope (custom props bind here)
 }
 
 // execCtx captures where statements emit while a block executes: the active
@@ -120,15 +128,27 @@ func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, []string, error
 		opts:         opts,
 		placeholders: map[string]*css.Rule{},
 		importing:    map[string]bool{},
+		customProps:  map[string]bool{},
 	}
-	ctx := &execCtx{scope: NewScope(), dir: opts.BaseDir, file: opts.Filename}
+	for _, name := range opts.CustomProperties {
+		ev.customProps[name] = true
+	}
+	ev.rootScope = NewScope()
+	ctx := &execCtx{scope: ev.rootScope, dir: opts.BaseDir, file: opts.Filename}
 	ctx.sink = &ev.out
 
+	if err := ev.seedGlobals(ctx.scope); err != nil {
+		return nil, nil, err
+	}
 	if err := ev.execBlock(sheet.Statements, ctx); err != nil {
 		return nil, nil, err
 	}
 
 	ev.applyExtends()
+
+	if root := ev.customPropsRule(); root != nil {
+		ev.out = append([]css.Node{root}, ev.out...)
+	}
 
 	nodes := ev.out
 	if opts.MergeDuplicates {
@@ -275,7 +295,7 @@ func (ev *evaluator) evalAssignment(a *ast.Assignment, scope *Scope) error {
 	if err != nil {
 		return err
 	}
-	scope.Set(a.Name, v)
+	scope.Set(a.Name, ev.wrapVar(a.Name, scope, v))
 	return nil
 }
 
@@ -487,7 +507,7 @@ func (ev *evaluator) evalArgs(exprs []ast.Expr, scope *Scope) ([]value.Value, er
 // iterItems returns the items a for-loop should iterate: a list's elements, or
 // the single value itself.
 func iterItems(v value.Value) []value.Value {
-	if l, ok := v.(*value.List); ok {
+	if l, ok := value.Deref(v).(*value.List); ok {
 		return l.Items
 	}
 	return []value.Value{v}
@@ -564,6 +584,7 @@ func (ev *evaluator) evalUnary(u *ast.Unary, scope *Scope) (value.Value, error) 
 	if err != nil {
 		return nil, err
 	}
+	v = value.Deref(v)
 	switch u.Op {
 	case token.MINUS:
 		n, ok := v.(*value.Number)
@@ -592,9 +613,13 @@ func (ev *evaluator) evalBinary(b *ast.Binary, scope *Scope) (value.Value, error
 
 	if b.Literal {
 		// Unparenthesized `/` in a property value: operands evaluate, the
-		// division does not (font: 14px/1.5).
+		// division does not (font: 14px/1.5). Custom-property refs stay
+		// wrapped — font: 14px/var(--lh) is valid CSS.
 		return &value.SlashList{L: l, R: r}, nil
 	}
+	// Operations below compute from concrete values, so custom-property
+	// wrappers resolve to their compile-time value here.
+	l, r = value.Deref(l), value.Deref(r)
 
 	switch b.Op {
 	case token.PLUS, token.MINUS, token.STAR, token.POW, token.SLASH, token.PERCENT:
@@ -663,6 +688,13 @@ func (ev *evaluator) evalCall(c *ast.Call, scope *Scope) (value.Value, error) {
 	}
 
 	if fn, ok := builtin.Lookup(c.Name); ok {
+		// Built-ins type-switch on concrete values, so custom-property
+		// wrappers resolve to their compile-time value. (User-defined
+		// functions above receive the wrapper: uses inside their bodies
+		// deref lazily, so emitted declarations keep var(--name).)
+		for i, a := range args {
+			args[i] = value.Deref(a)
+		}
 		return fn(args)
 	}
 

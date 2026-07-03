@@ -39,6 +39,32 @@ type Options struct {
 	// filesystem. Paths (Filename, BaseDir, IncludePaths, imports) are then
 	// slash-separated fs paths; a leading '/' on an import means the FS root.
 	FS fs.FS
+	// Globals defines variables in the stylesheet's root scope before it
+	// executes, letting Go code parameterize a compile (per-tenant theming,
+	// feature flags, A/B arms). Go values convert as follows:
+	//
+	//   - string: parsed and evaluated as a Stylus value expression —
+	//     "#0af", "10px", "1px solid red", "darken(#0af, 10%)" all work
+	//   - int/uint/float variants: unitless numbers
+	//   - bool: true/false
+	//   - nil: null
+	//
+	// A stylesheet assignment to the same name overrides the global (use the
+	// conditional form, `primary ?= #333`, to declare an overridable default
+	// in the sheet). Globals are seeded in sorted-name order.
+	Globals map[string]any
+	// CustomProperties lists root-level variables (from the sheet or Globals)
+	// to expose as CSS custom properties: the output starts with a :root rule
+	// declaring each listed name that is defined (--name: value, in list
+	// order), and a direct reference to the variable in value position
+	// compiles to var(--name) instead of inlining — so the property can be
+	// re-themed at runtime (dark mode, user themes) without recompiling.
+	//
+	// Uses that must compute at compile time — arithmetic, comparisons,
+	// built-in function arguments, {interpolation}, and media queries — fall
+	// back to the variable's compile-time value. Names are emitted verbatim
+	// after "--", so they should be valid CSS identifiers.
+	CustomProperties []string
 	// Filename is the source path, used in error messages and to derive BaseDir.
 	Filename string
 	// OutFile is the generated CSS filename recorded in a source map's "file"
@@ -72,12 +98,14 @@ func Compile(src string, opts Options) (string, error) {
 		return "", compileErr(err, opts.Filename)
 	}
 	out, err := eval.Evaluate(sheet, eval.Options{
-		Pretty:          opts.Pretty,
-		MergeDuplicates: opts.MergeDuplicates,
-		Filename:        opts.Filename,
-		BaseDir:         opts.baseDir(),
-		IncludePaths:    opts.IncludePaths,
-		FS:              opts.FS,
+		Pretty:           opts.Pretty,
+		MergeDuplicates:  opts.MergeDuplicates,
+		Filename:         opts.Filename,
+		BaseDir:          opts.baseDir(),
+		IncludePaths:     opts.IncludePaths,
+		FS:               opts.FS,
+		Globals:          opts.Globals,
+		CustomProperties: opts.CustomProperties,
 	})
 	if err != nil {
 		return "", compileErr(err, opts.Filename)
@@ -97,16 +125,18 @@ func Build(src string, opts Options) (Result, error) {
 		source = "input.styl"
 	}
 	cssOut, mapJSON, deps, err := eval.EvaluateFull(sheet, eval.Options{
-		Pretty:          opts.Pretty,
-		MergeDuplicates: opts.MergeDuplicates,
-		Filename:        opts.Filename,
-		BaseDir:         opts.baseDir(),
-		IncludePaths:    opts.IncludePaths,
-		FS:              opts.FS,
-		SourceMap:       opts.SourceMap,
-		SourceFile:      source,
-		SourceContent:   src,
-		OutFile:         opts.OutFile,
+		Pretty:           opts.Pretty,
+		MergeDuplicates:  opts.MergeDuplicates,
+		Filename:         opts.Filename,
+		BaseDir:          opts.baseDir(),
+		IncludePaths:     opts.IncludePaths,
+		FS:               opts.FS,
+		Globals:          opts.Globals,
+		CustomProperties: opts.CustomProperties,
+		SourceMap:        opts.SourceMap,
+		SourceFile:       source,
+		SourceContent:    src,
+		OutFile:          opts.OutFile,
 	})
 	if err != nil {
 		return Result{}, compileErr(err, opts.Filename)
@@ -175,15 +205,17 @@ func CompileMap(src string, opts Options) (cssOut, mapJSON string, err error) {
 		source = "input.styl"
 	}
 	cssOut, mapJSON, err = eval.EvaluateMap(sheet, eval.Options{
-		Pretty:          opts.Pretty,
-		MergeDuplicates: opts.MergeDuplicates,
-		Filename:        opts.Filename,
-		BaseDir:         opts.baseDir(),
-		IncludePaths:    opts.IncludePaths,
-		FS:              opts.FS,
-		SourceFile:      source,
-		SourceContent:   src,
-		OutFile:         opts.OutFile,
+		Pretty:           opts.Pretty,
+		MergeDuplicates:  opts.MergeDuplicates,
+		Filename:         opts.Filename,
+		BaseDir:          opts.baseDir(),
+		IncludePaths:     opts.IncludePaths,
+		FS:               opts.FS,
+		Globals:          opts.Globals,
+		CustomProperties: opts.CustomProperties,
+		SourceFile:       source,
+		SourceContent:    src,
+		OutFile:          opts.OutFile,
 	})
 	if err != nil {
 		return "", "", compileErr(err, opts.Filename)

@@ -36,6 +36,13 @@ type Options struct {
 	// SourceMaps builds a source map per stylesheet, serves it at
 	// "<name>.css.map", and appends the sourceMappingURL comment to the CSS.
 	SourceMaps bool
+	// Globals defines variables in every stylesheet's root scope (see
+	// styl.Options.Globals for value conversion). Fixed at engine creation —
+	// cached output stays valid; use one Engine per theme for per-tenant CSS.
+	Globals map[string]any
+	// CustomProperties lists root-level variables to expose as CSS custom
+	// properties (see styl.Options.CustomProperties).
+	CustomProperties []string
 }
 
 // Asset is a servable compiled artifact.
@@ -120,21 +127,25 @@ func (e *Engine) build(cssPath string) (*entry, error) {
 	if e.opts.FS != nil {
 		src := path.Join(rootOr(e.opts.Dir), srcRel)
 		res, err = styl.BuildFile(src, styl.Options{
-			FS:              e.opts.FS,
-			Pretty:          e.opts.Pretty,
-			MergeDuplicates: e.opts.MergeDuplicates,
-			IncludePaths:    e.opts.IncludePaths,
-			SourceMap:       e.opts.SourceMaps,
-			OutFile:         path.Base(cssPath),
+			FS:               e.opts.FS,
+			Pretty:           e.opts.Pretty,
+			MergeDuplicates:  e.opts.MergeDuplicates,
+			IncludePaths:     e.opts.IncludePaths,
+			Globals:          e.opts.Globals,
+			CustomProperties: e.opts.CustomProperties,
+			SourceMap:        e.opts.SourceMaps,
+			OutFile:          path.Base(cssPath),
 		})
 	} else {
 		src := filepath.Join(e.opts.Dir, filepath.FromSlash(srcRel))
 		res, err = styl.BuildFile(src, styl.Options{
-			Pretty:          e.opts.Pretty,
-			MergeDuplicates: e.opts.MergeDuplicates,
-			IncludePaths:    e.opts.IncludePaths,
-			SourceMap:       e.opts.SourceMaps,
-			OutFile:         path.Base(cssPath),
+			Pretty:           e.opts.Pretty,
+			MergeDuplicates:  e.opts.MergeDuplicates,
+			IncludePaths:     e.opts.IncludePaths,
+			Globals:          e.opts.Globals,
+			CustomProperties: e.opts.CustomProperties,
+			SourceMap:        e.opts.SourceMaps,
+			OutFile:          path.Base(cssPath),
 		})
 	}
 	if err != nil {

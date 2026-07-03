@@ -156,7 +156,7 @@ func ColorArith(op string, c *Color, rhs Value) (Value, error) {
 // Truthy reports a value's boolean interpretation, following Stylus semantics:
 // null, false, 0, and "" are falsy; everything else is truthy.
 func Truthy(v Value) bool {
-	switch x := v.(type) {
+	switch x := Deref(v).(type) {
 	case Null:
 		return false
 	case *Bool:

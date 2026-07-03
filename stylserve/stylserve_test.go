@@ -153,3 +153,22 @@ func TestEngineSourceMaps(t *testing.T) {
 		t.Errorf("map = %q %q", m.ContentType, m.Body)
 	}
 }
+
+func TestGlobalsAndCustomProperties(t *testing.T) {
+	fsys := fstest.MapFS{
+		"theme.styl": &fstest.MapFile{Data: []byte("primary ?= #333\na\n  color primary\n")},
+	}
+	eng := New(Options{
+		FS:               fsys,
+		Globals:          map[string]any{"primary": "#0af"},
+		CustomProperties: []string{"primary"},
+	})
+	a, err := eng.Asset("theme.css")
+	if err != nil {
+		t.Fatalf("Asset: %v", err)
+	}
+	want := ":root{--primary:#0af}a{color:var(--primary)}"
+	if string(a.Body) != want {
+		t.Errorf("got %q, want %q", a.Body, want)
+	}
+}

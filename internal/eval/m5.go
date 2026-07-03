@@ -5,6 +5,7 @@ import (
 
 	"github.com/rohanthewiz/go-styl/internal/ast"
 	"github.com/rohanthewiz/go-styl/internal/css"
+	"github.com/rohanthewiz/go-styl/internal/value"
 )
 
 // evalAtRule dispatches an at-rule by kind:
@@ -74,7 +75,8 @@ func (ev *evaluator) evalAtVars(params string, scope *Scope) string {
 				}
 				word := string(runes[i:j])
 				if v, ok := scope.Get(word); ok {
-					b.WriteString(v.CSS(ev.opts.Pretty))
+					// var() is invalid in media queries: use the concrete value.
+					b.WriteString(value.Deref(v).CSS(ev.opts.Pretty))
 				} else {
 					b.WriteString(word)
 				}

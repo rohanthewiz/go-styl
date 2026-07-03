@@ -10,6 +10,11 @@
 //	-compress     compressed output (default is pretty/expanded)
 //	-merge        merge duplicate rule bodies into selector groups
 //	-sourcemap    also emit a source map (requires -o); appends sourceMappingURL
+//	-D name=value define a global variable (repeatable); value is a Stylus
+//	              expression, e.g. -D primary=#0af -D 'pad=2 * 8px'
+//	-cssvar name  expose a root-level variable as a CSS custom property
+//	              (repeatable): emits --name on :root, references become
+//	              var(--name)
 package main
 
 import (
@@ -17,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	styl "github.com/rohanthewiz/go-styl"
 )
@@ -27,11 +33,28 @@ func main() {
 		compress  bool
 		merge     bool
 		sourcemap bool
+		globals   = map[string]any{}
+		cssVars   []string
 	)
 	flag.StringVar(&outPath, "o", "", "write CSS to this file instead of stdout")
 	flag.BoolVar(&compress, "compress", false, "compressed output")
 	flag.BoolVar(&merge, "merge", false, "merge duplicate rule bodies into selector groups")
 	flag.BoolVar(&sourcemap, "sourcemap", false, "emit a source map next to the output (requires -o)")
+	flag.Func("D", "define a global variable as name=value (repeatable)", func(s string) error {
+		name, val, ok := strings.Cut(s, "=")
+		if !ok || name == "" {
+			return fmt.Errorf("expected name=value, got %q", s)
+		}
+		globals[name] = val
+		return nil
+	})
+	flag.Func("cssvar", "expose a root-level variable as a CSS custom property (repeatable)", func(s string) error {
+		if s == "" {
+			return fmt.Errorf("expected a variable name")
+		}
+		cssVars = append(cssVars, s)
+		return nil
+	})
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: styl [flags] <input.styl>")
 		flag.PrintDefaults()
@@ -45,13 +68,15 @@ func main() {
 	in := flag.Arg(0)
 
 	if sourcemap {
-		runWithSourceMap(in, outPath, compress, merge)
+		runWithSourceMap(in, outPath, compress, merge, globals, cssVars)
 		return
 	}
 
 	css, err := styl.CompileFile(in, styl.Options{
-		Pretty:          !compress,
-		MergeDuplicates: merge,
+		Pretty:           !compress,
+		MergeDuplicates:  merge,
+		Globals:          globals,
+		CustomProperties: cssVars,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -70,7 +95,7 @@ func main() {
 
 // runWithSourceMap compiles in -> outPath plus a "<outPath>.map" source map and
 // appends a sourceMappingURL comment to the CSS.
-func runWithSourceMap(in, outPath string, compress, merge bool) {
+func runWithSourceMap(in, outPath string, compress, merge bool, globals map[string]any, cssVars []string) {
 	if outPath == "" {
 		fmt.Fprintln(os.Stderr, "error: -sourcemap requires -o <file>")
 		os.Exit(2)
@@ -78,9 +103,11 @@ func runWithSourceMap(in, outPath string, compress, merge bool) {
 	mapPath := outPath + ".map"
 
 	css, mapJSON, err := styl.CompileFileMap(in, styl.Options{
-		Pretty:          !compress,
-		MergeDuplicates: merge,
-		OutFile:         filepath.Base(outPath),
+		Pretty:           !compress,
+		MergeDuplicates:  merge,
+		Globals:          globals,
+		CustomProperties: cssVars,
+		OutFile:          filepath.Base(outPath),
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
