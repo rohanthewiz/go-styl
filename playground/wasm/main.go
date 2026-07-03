@@ -3,7 +3,8 @@
 // Command wasm is the WebAssembly build of go-styl backing the browser
 // playground. It installs a global `goStyl` object with:
 //
-//	goStyl.compile(src, {pretty, mergeDuplicates, sourcemap}) ->
+//	goStyl.compile(src, {pretty, mergeDuplicates, sourcemap,
+//	                     globals, customProperties}) ->
 //	    {css, map, ms} | {error, file, line, col, ms}
 //	goStyl.examples() -> [{name, source}]
 //	goStyl.version -> module version string
@@ -63,6 +64,12 @@ func compile(_ js.Value, args []js.Value) any {
 		if v := o.Get("sourcemap"); v.Type() == js.TypeBoolean {
 			sourceMap = v.Bool()
 		}
+		if v := o.Get("globals"); v.Type() == js.TypeObject {
+			opts.Globals = toGlobals(v)
+		}
+		if v := o.Get("customProperties"); js.Global().Get("Array").Call("isArray", v).Bool() {
+			opts.CustomProperties = toStrings(v)
+		}
 	}
 	opts.SourceMap = sourceMap
 
@@ -83,6 +90,46 @@ func compile(_ js.Value, args []js.Value) any {
 	out := map[string]any{"css": res.CSS, "ms": ms}
 	if sourceMap {
 		out["map"] = res.Map
+	}
+	return out
+}
+
+// toGlobals converts a JS object into Options.Globals. String values are
+// parsed as Stylus value expressions on the Go side; numbers, booleans, and
+// null map to their Stylus counterparts. Other value types are dropped.
+func toGlobals(o js.Value) map[string]any {
+	keys := js.Global().Get("Object").Call("keys", o)
+	g := make(map[string]any, keys.Length())
+	for i := range keys.Length() {
+		name := keys.Index(i).String()
+		switch v := o.Get(name); v.Type() {
+		case js.TypeString:
+			g[name] = v.String()
+		case js.TypeNumber:
+			g[name] = v.Float()
+		case js.TypeBoolean:
+			g[name] = v.Bool()
+		case js.TypeNull:
+			g[name] = nil
+		}
+	}
+	if len(g) == 0 {
+		return nil
+	}
+	return g
+}
+
+// toStrings converts a JS array into a []string, skipping non-string entries.
+func toStrings(arr js.Value) []string {
+	n := arr.Length()
+	out := make([]string, 0, n)
+	for i := range n {
+		if v := arr.Index(i); v.Type() == js.TypeString {
+			out = append(out, v.String())
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

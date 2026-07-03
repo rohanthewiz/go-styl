@@ -65,8 +65,15 @@
     font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     white-space: pre-wrap;
   }
-  details#mapbox { border-top: 1px solid var(--edge); background: var(--panel); }
-  details#mapbox summary { padding: .35rem .9rem; font-size: .78rem; color: var(--dim); cursor: pointer; user-select: none; }
+  details#mapbox, details#globalsbox { border-top: 1px solid var(--edge); background: var(--panel); }
+  details#mapbox summary, details#globalsbox summary { padding: .35rem .9rem; font-size: .78rem; color: var(--dim); cursor: pointer; user-select: none; }
+  #globals {
+    display: block; width: 100%; height: 6.5rem; padding: .5rem .9rem;
+    border: 0; border-top: 1px solid var(--edge); resize: vertical;
+    background: transparent; color: var(--fg);
+    font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre; outline: none;
+  }
   details#mapbox pre {
     margin: 0; padding: .5rem .9rem; max-height: 9rem; overflow: auto;
     font: 11.5px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--dim);
@@ -104,6 +111,14 @@
     <textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off"
       placeholder="// type Stylus here"></textarea>
     <pre id="error"></pre>
+    <details id="globalsbox">
+      <summary>globals &amp; custom properties (Go-side) <span id="globalstat"></span></summary>
+      <textarea id="globals" spellcheck="false" autocapitalize="off" autocomplete="off"
+        placeholder="// one per line — seeds Options.Globals / Options.CustomProperties
+primary = #0af
+--accent = #e91e63   // global, also emitted as :root { --accent }
+--primary            // expose an existing variable as a custom property"></textarea>
+    </details>
   </section>
   <section class="pane">
     <div class="bar">css out<span class="stat" id="outstat"></span></div>
@@ -136,17 +151,48 @@ button(bg = primary)
   button(#607d8b)
 `;
 
+  // --- Go-side options panel -------------------------------------------------
+  // One directive per line: `name = value` seeds Options.Globals (the value is
+  // parsed as a Stylus expression); a `--` prefix also lists the name in
+  // Options.CustomProperties; a bare `--name` lists it without setting a
+  // global. `//` comments are ignored.
+  function goSideOptions() {
+    const globals = {}, customProperties = [];
+    for (let line of $('globals').value.split('\n')) {
+      line = line.replace(/(^|\s)\/\/.*$/, '').trim();
+      const m = /^(--)?([A-Za-z_][-\w]*)\s*(?:=\s*(\S.*?)\s*)?$/.exec(line);
+      if (!m) continue;
+      const [, dash, name, val] = m;
+      if (val !== undefined) globals[name] = val;
+      if (dash && !customProperties.includes(name)) customProperties.push(name);
+    }
+    return { globals, customProperties };
+  }
+
   // --- compile loop (debounced; queued until wasm is ready) -----------------
   let ready = false, timer = 0;
   function schedule() { clearTimeout(timer); timer = setTimeout(compile, 120); }
   function compile() {
     if (!ready) return;
-    try { localStorage.setItem('go-styl-src', src.value); } catch (_) {}
-    const r = goStyl.compile(src.value, {
+    try {
+      localStorage.setItem('go-styl-src', src.value);
+      localStorage.setItem('go-styl-globals', $('globals').value);
+    } catch (_) {}
+    const opts = {
       pretty: $('pretty').checked,
       mergeDuplicates: $('merge').checked,
       sourcemap: $('sourcemap').checked,
-    });
+    };
+    const gs = goSideOptions();
+    const nGlobals = Object.keys(gs.globals).length;
+    if (nGlobals) opts.globals = gs.globals;
+    if (gs.customProperties.length) opts.customProperties = gs.customProperties;
+    $('globalstat').textContent =
+      nGlobals || gs.customProperties.length
+        ? '· ' + nGlobals + ' global' + (nGlobals === 1 ? '' : 's') +
+          (gs.customProperties.length ? ' · ' + gs.customProperties.length + ' custom' : '')
+        : '';
+    const r = goStyl.compile(src.value, opts);
     $('srcstat').textContent = src.value.length + ' chars';
     if (r.error !== undefined) {
       errBox.textContent = r.error;
@@ -172,6 +218,7 @@ button(bg = primary)
 
   // --- wiring ----------------------------------------------------------------
   src.addEventListener('input', schedule);
+  $('globals').addEventListener('input', schedule);
   for (const id of ['pretty', 'merge', 'sourcemap'])
     $(id).addEventListener('change', compile);
 
@@ -210,9 +257,16 @@ button(bg = primary)
     compile();
   };
 
-  let saved = null;
-  try { saved = localStorage.getItem('go-styl-src'); } catch (_) {}
+  let saved = null, savedGlobals = null;
+  try {
+    saved = localStorage.getItem('go-styl-src');
+    savedGlobals = localStorage.getItem('go-styl-globals');
+  } catch (_) {}
   src.value = saved || DEFAULT;
+  if (savedGlobals) {
+    $('globals').value = savedGlobals;
+    $('globalsbox').open = true;
+  }
 
   const go = new Go();
   // Prefer streaming; fall back for servers that mislabel .wasm's MIME type.
