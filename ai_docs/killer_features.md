@@ -40,6 +40,7 @@ Two halves of one feature:
 - A `styl gen` codegen (run via `go generate`) that emits a Go package of
   constants for every class/variable in a `.styl` — so `b.Div(css.Card)` in
   element is typo-proof and refactorable. Typed-css-modules, but for Go.
+  ✅ SHIPPED as M14 (`styl gen`, `styl.Extract`, `Manifest.GoSource`).
 
 ## 4. A Stylus LSP — single static binary
 

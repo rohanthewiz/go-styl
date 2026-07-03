@@ -108,10 +108,11 @@ func EvaluateMap(sheet *ast.Stylesheet, opts Options) (cssOut, mapJSON string, e
 // (when opts.SourceMap is set, else ""), and the resolved paths of every
 // inlined @import (for build-cache invalidation).
 func EvaluateFull(sheet *ast.Stylesheet, opts Options) (cssOut, mapJSON string, deps []string, err error) {
-	nodes, deps, err := evalNodes(sheet, opts)
+	ev, nodes, err := evalNodes(sheet, opts)
 	if err != nil {
 		return "", "", nil, err
 	}
+	deps = ev.deps
 	if !opts.SourceMap {
 		return css.RenderSheet(nodes, opts.Pretty, nil), "", deps, nil
 	}
@@ -120,10 +121,10 @@ func EvaluateFull(sheet *ast.Stylesheet, opts Options) (cssOut, mapJSON string, 
 	return cssOut, sm.JSON(), deps, nil
 }
 
-// evalNodes runs the evaluator and returns the resolved top-level output nodes
-// (after @extend resolution and the optional duplicate-merge pass) plus the
-// resolved import paths.
-func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, []string, error) {
+// evalNodes runs the evaluator and returns it along with the resolved
+// top-level output nodes (after @extend resolution and the optional
+// duplicate-merge pass). The evaluator carries the import deps and root scope.
+func evalNodes(sheet *ast.Stylesheet, opts Options) (*evaluator, []css.Node, error) {
 	ev := &evaluator{
 		opts:         opts,
 		placeholders: map[string]*css.Rule{},
@@ -154,7 +155,7 @@ func evalNodes(sheet *ast.Stylesheet, opts Options) ([]css.Node, []string, error
 	if opts.MergeDuplicates {
 		nodes = css.MergeDuplicates(nodes)
 	}
-	return nodes, ev.deps, nil
+	return ev, nodes, nil
 }
 
 // applyExtends grafts each @extend's selectors onto every matching target rule.

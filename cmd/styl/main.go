@@ -3,6 +3,7 @@
 // Usage:
 //
 //	styl [flags] <input.styl>
+//	styl gen [flags] <input.styl>
 //
 // Flags:
 //
@@ -15,6 +16,19 @@
 //	-cssvar name  expose a root-level variable as a CSS custom property
 //	              (repeatable): emits --name on :root, references become
 //	              var(--name)
+//
+// The gen subcommand emits a Go source file of typed constants for every
+// class name, element ID, keyframes name, and root-level variable in the
+// stylesheet, for typo-proof selector references (b.Div(css.Card)). Wire it
+// up with go:generate:
+//
+//	//go:generate go run github.com/rohanthewiz/go-styl/cmd/styl gen -pkg css -o css_gen.go app.styl
+//
+// gen flags:
+//
+//	-o <file>     write the Go source to file instead of stdout
+//	-pkg <name>   package name for the generated file (default "css")
+//	-D name=value define a global variable (repeatable), as above
 package main
 
 import (
@@ -28,6 +42,11 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "gen" {
+		runGen(os.Args[2:])
+		return
+	}
+
 	var (
 		outPath   string
 		compress  bool

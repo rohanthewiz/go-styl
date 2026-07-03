@@ -82,6 +82,16 @@ declares `primary ?= #06c`, Go passes
 output starts `:root{--primary:…}` and refs are `var(--primary)`, so the
 browser can re-theme (dark mode) without recompiling.
 
+**Typed constants (`styl gen`)** — `styl.Extract(src, opts)` /
+`styl.ExtractFile(path, opts)` return a `Manifest{Classes, IDs, Keyframes,
+Vars, Source}`: every class/ID/`@keyframes` name in the rendered CSS (sorted,
+deduped; attribute strings and output-less rules excluded) plus root-scope
+variables with final values (Globals and `@import` honored).
+`Manifest.GoSource(pkg)` renders a gofmt'd Go constants file — classes bare
+(`Card = "card"`), IDs/keyframes/vars suffixed `ID`/`Anim`/`Var`; names
+title-case on non-alphanumerics (`card__title--big` → `CardTitleBig`);
+colliding constants are an error naming both sources. **go-styl extension.**
+
 ### CLI (`cmd/styl`)
 
 ```shell
@@ -91,12 +101,15 @@ go run ./cmd/styl -merge input.styl       # merge duplicate rule bodies
 go run ./cmd/styl -o out.css input.styl   # write to a file
 go run ./cmd/styl -o out.css -sourcemap input.styl  # also writes out.css.map
 go run ./cmd/styl -D primary=#0af -cssvar primary input.styl  # theming (repeatable)
+go run ./cmd/styl gen -pkg css -o css_gen.go input.styl       # typed Go constants
 ```
 
 `-sourcemap` requires `-o`; it writes `<out>.map` and appends a
 `/*# sourceMappingURL=… */` comment to the CSS. `-D name=value` defines a
 global (value is a Stylus expression); `-cssvar name` exposes a variable as a
-CSS custom property.
+CSS custom property. `styl gen` emits a Go constants file instead of CSS
+(flags: `-o`, `-pkg` default `css`, `-D`) — wire it with
+`//go:generate go run github.com/rohanthewiz/go-styl/cmd/styl gen -pkg css -o css_gen.go app.styl`.
 
 ### Serving over HTTP
 
