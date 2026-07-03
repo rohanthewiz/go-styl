@@ -281,8 +281,21 @@ Pruning errs toward keeping:
   declaration references them (vendor-prefixed and quoted names included),
   and at-rules emptied by pruning disappear.
 
-Compiles cost microseconds, so pruning per response is practical — cache by
-the used-name set when pages share layouts.
+Compiles cost microseconds, so pruning per response is practical — and the
+[`stylcrit`](stylcrit/) package packages the whole flow as a cached engine
+for middleware use:
+
+```go
+crit := stylcrit.New(stylcrit.Options{
+    Path:     "styles/app.styl",
+    Safelist: styl.Used{Classes: []string{"menu--open"}}, // names JS toggles
+})
+page, err := crit.Inline(renderPage()) // <style> injected before </head>
+```
+
+Output is cached by the page's used-name set (pages sharing a layout compile
+once) and invalidated when the stylesheet or any `@import` changes. The rweb
+middleware (`rweb/middleware/critical`) applies it to every HTML response.
 
 ## Serving over HTTP
 
