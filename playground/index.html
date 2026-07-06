@@ -92,6 +92,18 @@
   main[hidden] { display: none; }
   .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .pane + .pane { border-left: 1px solid var(--edge); }
+
+  /* --- pane splitter ----------------------------------------------------------- */
+  .split {
+    flex: none; width: 7px; cursor: col-resize; touch-action: none;
+    background: linear-gradient(to right,
+      transparent 3px, var(--edge) 3px, var(--edge) 4px, transparent 4px);
+  }
+  .split:hover, .split.drag {
+    background: linear-gradient(to right,
+      transparent 2px, var(--accent) 2px, var(--accent) 5px, transparent 5px);
+  }
+  body.splitting { user-select: none; cursor: col-resize; }
   .pane .bar {
     padding: .3rem .9rem; font-size: .75rem; letter-spacing: .06em;
     text-transform: uppercase; color: var(--dim);
@@ -232,7 +244,9 @@
 
   @media (max-width: 900px) {
     main#view-play { flex-direction: column; }
-    #view-play .pane + .pane { border-left: 0; border-top: 1px solid var(--edge); }
+    .split { display: none; }
+    #view-play .pane { width: auto !important; flex: 1 !important; }
+    #view-play .pane ~ .pane { border-left: 0; border-top: 1px solid var(--edge); }
     main#view-tutorial { flex-direction: column; overflow-y: auto; }
     #tut-nav { width: auto; flex: none; border-right: 0; border-bottom: 1px solid var(--edge); max-height: 22vh; }
     #tut-cols { flex-direction: column; }
@@ -280,6 +294,7 @@ primary = #0af
 --primary            // expose an existing variable as a custom property"></textarea>
     </details>
   </section>
+  <div class="split" id="split" title="drag to resize · double-click to reset"></div>
   <section class="pane">
     <div class="bar">css out<span class="stat" id="outstat"></span></div>
     <pre class="out" id="out"></pre>
@@ -471,6 +486,38 @@ button(bg = primary)
     repaintSrc();
     schedule();
   });
+
+  // --- pane splitter -----------------------------------------------------------
+  // Drag to resize the editor/output split (persisted as a % of the row);
+  // double-click resets to 50/50. Hidden under the 900px stacked layout,
+  // where an !important rule also neutralizes the inline width.
+  (() => {
+    const bar = $('split'), left = bar.previousElementSibling, row = bar.parentElement;
+    const apply = pct => { left.style.flex = 'none'; left.style.width = pct + '%'; };
+    let saved = NaN;
+    try { saved = parseFloat(localStorage.getItem('go-styl-split')); } catch (_) {}
+    if (saved >= 20 && saved <= 80) apply(saved);
+    bar.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      bar.setPointerCapture(e.pointerId);
+      bar.classList.add('drag');
+      document.body.classList.add('splitting');
+    });
+    bar.addEventListener('pointermove', e => {
+      if (!bar.classList.contains('drag')) return;
+      const r = row.getBoundingClientRect();
+      const pct = Math.min(80, Math.max(20, (e.clientX - r.left) / r.width * 100));
+      apply(pct);
+      try { localStorage.setItem('go-styl-split', pct.toFixed(1)); } catch (_) {}
+    });
+    const end = () => { bar.classList.remove('drag'); document.body.classList.remove('splitting'); };
+    bar.addEventListener('pointerup', end);
+    bar.addEventListener('pointercancel', end);
+    bar.addEventListener('dblclick', () => {
+      left.style.flex = ''; left.style.width = '';
+      try { localStorage.removeItem('go-styl-split'); } catch (_) {}
+    });
+  })();
 
   $('example').addEventListener('change', e => {
     const ex = examplesByName[e.target.value];
