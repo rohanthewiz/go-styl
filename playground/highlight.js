@@ -1,0 +1,220 @@
+// highlight.js — tiny, dependency-free syntax highlighters for the go-styl
+// playground: Stylus source (indent or brace syntax) and generated CSS.
+//
+//   stylHi.styl(src)          -> HTML string (token <span>s)
+//   stylHi.css(css)           -> HTML string (adds color swatches)
+//   stylHi.escape(s)          -> HTML-escaped string
+//   stylHi.editor(ta, code)   -> wires a <textarea> to its overlay <code>;
+//                                returns a repaint function
+//
+// The Stylus tokenizer is a per-line scanner with one piece of context: a line
+// whose next non-blank line is indented deeper (or that ends in `{` or `,`)
+// opens a block and is highlighted as a selector; other lines are declarations,
+// assignments, control flow, or at-rules. That heuristic is what lets
+// `body a` (selector) and `color red` (declaration) read differently without
+// a real parse.
+(() => {
+'use strict';
+
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
+const esc = s => s.replace(/[&<>]/g, c => ESC[c]);
+const span = (cls, s) => s ? '<span class="' + cls + '">' + esc(s) + '</span>' : '';
+
+const KW = /^(?:true|false|null|and|or|not|is|isnt|in|if|unless|else|for|return|arguments|is-defined|defined)$/;
+const IDENT = /^-{0,2}[A-Za-z_$][-\w$]*/;
+
+// --- expression / declaration-value scanner --------------------------------
+// `st.comment` carries an open /* */ across lines. `swatch` adds an inline
+// color chip before hex colors (used only where there is no textarea overlay
+// that must stay column-aligned).
+function value(text, st, swatch) {
+  let out = '', i = 0;
+  const n = text.length;
+  while (i < n) {
+    const rest = text.slice(i);
+    let m;
+    if (st.comment) {
+      const end = rest.indexOf('*/');
+      if (end < 0) { out += span('t-com', rest); break; }
+      out += span('t-com', rest.slice(0, end + 2));
+      st.comment = false; i += end + 2; continue;
+    }
+    if (rest.startsWith('/*')) { st.comment = true; continue; }
+    if ((m = /^\/\/.*/.exec(rest))) { out += span('t-com', m[0]); i += m[0].length; continue; }
+    if ((m = /^(['"])(?:\\.|(?!\1).)*\1?/.exec(rest))) { out += span('t-str', m[0]); i += m[0].length; continue; }
+    if ((m = /^#[0-9a-fA-F]{3,8}\b/.exec(rest))) {
+      out += swatch
+        ? '<span class="t-col"><i style="background:' + m[0] + '"></i>' + m[0] + '</span>'
+        : '<span class="t-col" style="text-decoration-color:' + m[0] + '">' + m[0] + '</span>';
+      i += m[0].length; continue;
+    }
+    if ((m = /^(\d*\.)?\d+[a-zA-Z%]*/.exec(rest))) { out += span('t-num', m[0]); i += m[0].length; continue; }
+    if ((m = /^![a-zA-Z]+/.exec(rest))) { out += span('t-kw', m[0]); i += m[0].length; continue; }
+    if (rest[0] === '{' || rest[0] === '}') { out += span('t-int', rest[0]); i++; continue; }
+    if ((m = IDENT.exec(rest))) {
+      const w = m[0];
+      out += span(rest[w.length] === '(' ? 't-fn' : KW.test(w) ? 't-kw' : 't-id', w);
+      i += w.length; continue;
+    }
+    if ((m = /^\s+/.exec(rest))) { out += m[0]; i += m[0].length; continue; }
+    out += span('t-op', rest[0]); i++;
+  }
+  return out;
+}
+
+// --- selector scanner -------------------------------------------------------
+function selector(text, st) {
+  let out = '', i = 0;
+  const n = text.length;
+  while (i < n) {
+    const rest = text.slice(i);
+    let m;
+    if (st.comment || rest.startsWith('/*') || rest.startsWith('//'))
+      return out + value(rest, st);
+    if ((m = /^(['"])(?:\\.|(?!\1).)*\1?/.exec(rest))) { out += span('t-str', m[0]); i += m[0].length; continue; }
+    if ((m = /^[.#$][-\w]+/.exec(rest))) { out += span('t-cls', m[0]); i += m[0].length; continue; }
+    if ((m = /^::?[-\w]+/.exec(rest))) { out += span('t-pse', m[0]); i += m[0].length; continue; }
+    if (rest[0] === '&') { out += span('t-amp', '&'); i++; continue; }
+    if (rest[0] === '{' || rest[0] === '}') { out += span('t-int', rest[0]); i++; continue; }
+    if ((m = /^(\d*\.)?\d+%?/.exec(rest))) { out += span('t-num', m[0]); i += m[0].length; continue; }
+    if ((m = IDENT.exec(rest))) { out += span('t-sel', m[0]); i += m[0].length; continue; }
+    if ((m = /^\s+/.exec(rest))) { out += m[0]; i += m[0].length; continue; }
+    out += span('t-op', rest[0]); i++;
+  }
+  return out;
+}
+
+// --- property-name scanner (handles {interp} inside the name) --------------
+function property(text) {
+  let out = '', i = 0;
+  while (i < text.length) {
+    const m = /^\{[^}]*\}/.exec(text.slice(i));
+    if (m) {
+      out += span('t-int', '{') + span('t-id', m[0].slice(1, -1)) + span('t-int', '}');
+      i += m[0].length;
+    } else {
+      const j = text.indexOf('{', i);
+      const chunk = j < 0 ? text.slice(i) : text.slice(i, j);
+      out += span('t-prop', chunk);
+      i += chunk.length || 1;
+    }
+  }
+  return out;
+}
+
+// --- one Stylus line, role already decided ----------------------------------
+function stylLine(t, opens, st) {
+  let m;
+  if (t.startsWith('//') || t.startsWith('/*')) return value(t, st);
+  if ((m = /^@[-\w]+/.exec(t))) {
+    const rest = t.slice(m[0].length);
+    const asSel = /^@extends?$/.test(m[0]);
+    return span('t-at', m[0]) + (asSel ? selector(rest, st) : value(rest, st));
+  }
+  if ((m = /^(else if|if|else|unless|for|while|return)(?![-\w])/.exec(t)))
+    return span('t-kw', m[0]) + value(t.slice(m[0].length), st);
+  if ((m = /^(-{0,2}[A-Za-z_$][-\w$]*)(\s*)(\?=|:=|\+=|-=|\*=|\/=|=(?!=))/.exec(t)))
+    return span('t-var', m[1]) + m[2] + span('t-op', m[3]) + value(t.slice(m[0].length), st);
+  if (opens || /\{\s*$/.test(t) || /,\s*$/.test(t)) {
+    if ((m = /^(-{0,2}[A-Za-z_][-\w]*)\(/.exec(t)))
+      return span('t-fn', m[1]) + value(t.slice(m[1].length), st);
+    return selector(t, st);
+  }
+  if (/^[.#&>+~*\[:$}]/.test(t)) return selector(t, st);
+  if ((m = /^(-{0,2}[A-Za-z_][-\w]*)\(/.exec(t)))       // mixin call
+    return span('t-fn', m[1]) + value(t.slice(m[1].length), st);
+  if ((m = /^((?:\{[^}]*\}|[-\w$])+)(\s*:?\s*)/.exec(t)))
+    return property(m[1]) + m[2] + value(t.slice(m[0].length), st);
+  return value(t, st);
+}
+
+// --- whole Stylus source ----------------------------------------------------
+function styl(src) {
+  const lines = src.split('\n');
+  const indents = lines.map(l =>
+    /^\s*$/.test(l) ? -1 : l.match(/^[ \t]*/)[0].replace(/\t/g, '  ').length);
+  const st = { comment: false };
+  const out = [];
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    if (st.comment) { out.push(value(line, st)); continue; }
+    const lead = line.match(/^[ \t]*/)[0];
+    const t = line.slice(lead.length);
+    if (!t) { out.push(esc(line)); continue; }
+    let next = -1;
+    for (let j = li + 1; j < lines.length; j++)
+      if (indents[j] >= 0) { next = indents[j]; break; }
+    out.push(lead + stylLine(t, next > indents[li], st));
+  }
+  return out.join('\n');
+}
+
+// --- generated CSS ----------------------------------------------------------
+function css(text) {
+  let out = '', i = 0;
+  const stack = ['sel'];
+  const st = { comment: false };
+  while (i < text.length) {
+    const rest = text.slice(i);
+    let m;
+    if ((m = /^\s+/.exec(rest))) { out += m[0]; i += m[0].length; continue; }
+    if ((m = /^\/\*[^]*?(?:\*\/|$)/.exec(rest))) { out += span('t-com', m[0]); i += m[0].length; continue; }
+    if (rest[0] === '}') {
+      if (stack.length > 1) stack.pop();
+      out += span('t-op', '}'); i++; continue;
+    }
+    if (stack[stack.length - 1] === 'sel') {
+      if (rest[0] === '@') {
+        m = /^@[-\w]+/.exec(rest);
+        out += span('t-at', m[0]); i += m[0].length;
+        const p = /^[^{;]*/.exec(text.slice(i))[0];
+        out += value(p, st, true); i += p.length;
+        if (text[i] === '{') {
+          stack.push(/^@(media|supports|keyframes|-[-\w]+-keyframes|document|layer|container)$/.test(m[0]) ? 'sel' : 'body');
+          out += span('t-op', '{'); i++;
+        } else if (text[i] === ';') { out += span('t-op', ';'); i++; }
+        continue;
+      }
+      m = /^[^{}@]+/.exec(rest);
+      if (m) {
+        out += selector(m[0], st); i += m[0].length;
+        if (text[i] === '{') { stack.push('body'); out += span('t-op', '{'); i++; }
+        continue;
+      }
+      if (rest[0] === '{') { stack.push('body'); out += span('t-op', '{'); i++; continue; }
+      out += span('t-op', rest[0]); i++; continue;
+    }
+    // rule body: `prop: value;`
+    if ((m = /^(--[\w-]+|\*?[-\w$]+)(\s*)(:)/.exec(rest))) {
+      out += span('t-prop', m[1]) + m[2] + span('t-op', ':');
+      i += m[0].length;
+      const v = /^[^;}]*/.exec(text.slice(i))[0];
+      out += value(v, st, true); i += v.length;
+      if (text[i] === ';') { out += span('t-op', ';'); i++; }
+      continue;
+    }
+    out += span('t-op', rest[0]); i++;
+  }
+  return out;
+}
+
+// --- overlay editor wiring ---------------------------------------------------
+// The <textarea> sits on top with transparent text (its wrapper's CSS handles
+// that); the highlighted copy lives in `code` inside an overflow-hidden <pre>
+// behind it. `enabled()` lets the host toggle highlighting off cheaply.
+function editor(ta, code, enabled) {
+  const pre = code.parentElement;
+  const paint = () => {
+    code.innerHTML = (enabled ? enabled() : true) ? styl(ta.value) + '\n' : esc(ta.value) + '\n';
+  };
+  const sync = () => { pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft; };
+  ta.addEventListener('input', paint);
+  ta.addEventListener('scroll', sync);
+  paint();
+  return () => { paint(); sync(); };
+}
+
+const api = { styl, css, escape: esc, editor };
+if (typeof window !== 'undefined') window.stylHi = api;
+if (typeof module !== 'undefined') module.exports = api;
+})();

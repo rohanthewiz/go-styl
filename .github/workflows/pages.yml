@@ -41,7 +41,7 @@ jobs:
       - name: Stage site
         run: |
           mkdir -p _site
-          cp playground/index.html playground/styl.wasm playground/wasm_exec.js _site/
+          cp playground/index.html playground/*.js playground/styl.wasm _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
