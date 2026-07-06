@@ -9,7 +9,7 @@
 //   check    — (css, flat) => bool; flat is css with whitespace collapsed to
 //              single spaces. Passing marks the lesson complete.
 //   solution — source the "solution" button loads
-//   opts     — extra goStyl.compile options (used by the theming lesson)
+//   opts     — extra compile options (used by the theming lesson)
 //
 // The data half is plain JS so ../playground/verify_tutorial.js can compile
 // every snippet with the real compiler in CI/dev.
@@ -1244,37 +1244,44 @@ function init() {
     else outEl.textContent = lastCSS;
   }
 
+  // Compiles are async (the compiler lives in a web worker — see runner.js);
+  // compileSeq drops superseded results, and a lesson switch mid-flight
+  // makes the old result stale.
+  let compileSeq = 0;
   function compile() {
-    if (!window.goStyl) return;
+    if (!window.stylRun) return;
     const l = LESSONS[cur];
     const opts = Object.assign({ pretty: true }, l.opts || {});
-    const r = goStyl.compile(ta.value, opts);
-    if (r.error !== undefined) {
-      errEl.textContent = r.error;
-      errEl.style.display = 'block';
-      outEl.style.opacity = '0.45';
-    } else {
-      errEl.style.display = 'none';
-      outEl.style.opacity = '';
-      lastCSS = r.css;
-      renderOut();
-      if (l.check) {
-        const flat = r.css.replace(/\s+/g, ' ');
-        if (l.check(r.css, flat)) {
-          if (!done.has(l.id)) { done.add(l.id); saveDone(); renderNav(); }
-          statEl.textContent = '✓ task complete';
-          statEl.className = 'stat ok';
-          return;
+    const seq = ++compileSeq;
+    stylRun.compile(ta.value, opts).then(r => {
+      if (seq !== compileSeq || LESSONS[cur] !== l) return;
+      if (r.error !== undefined) {
+        errEl.textContent = r.error;
+        errEl.style.display = 'block';
+        outEl.style.opacity = '0.45';
+      } else {
+        errEl.style.display = 'none';
+        outEl.style.opacity = '';
+        lastCSS = r.css;
+        renderOut();
+        if (l.check) {
+          const flat = r.css.replace(/\s+/g, ' ');
+          if (l.check(r.css, flat)) {
+            if (!done.has(l.id)) { done.add(l.id); saveDone(); renderNav(); }
+            statEl.textContent = '✓ task complete';
+            statEl.className = 'stat ok';
+            return;
+          }
         }
       }
-    }
-    if (l.check) {
-      statEl.textContent = done.has(l.id) ? '✓ solved earlier' : '○ not yet';
-      statEl.className = done.has(l.id) ? 'stat ok' : 'stat';
-    } else {
-      statEl.textContent = '';
-      statEl.className = 'stat';
-    }
+      if (l.check) {
+        statEl.textContent = done.has(l.id) ? '✓ solved earlier' : '○ not yet';
+        statEl.className = done.has(l.id) ? 'stat ok' : 'stat';
+      } else {
+        statEl.textContent = '';
+        statEl.className = 'stat';
+      }
+    });
   }
 
   let timer = 0;

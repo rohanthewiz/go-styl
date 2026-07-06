@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>go-styl playground</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2363b3ed'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' font-weight='bold' text-anchor='middle' fill='%2314161a'%3Est%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #14161a; --panel: #1c1f26; --edge: #2c313c;
@@ -340,8 +341,10 @@ primary = #0af
 
 <div id="loading">loading compiler…</div>
 
-<script src="wasm_exec.js"></script>
+<!-- wasm_exec.js is loaded by worker.js — the compiler lives in a web
+     worker so pathological input can never freeze the page. -->
 <script src="highlight.js"></script>
+<script src="runner.js"></script>
 <script src="tutorial.js"></script>
 <script>
 (() => {
@@ -415,8 +418,8 @@ button(bg = primary)
     return { globals, customProperties };
   }
 
-  // --- compile loop (debounced; queued until wasm is ready) -----------------
-  let ready = false, timer = 0;
+  // --- compile loop (debounced; async via the worker-backed runner) ---------
+  let ready = false, timer = 0, compileSeq = 0;
   function schedule() { clearTimeout(timer); timer = setTimeout(compile, 120); }
   function compile() {
     if (!ready) return;
@@ -438,29 +441,32 @@ button(bg = primary)
         ? '· ' + nGlobals + ' global' + (nGlobals === 1 ? '' : 's') +
           (gs.customProperties.length ? ' · ' + gs.customProperties.length + ' custom' : '')
         : '';
-    const r = goStyl.compile(src.value, opts);
     $('srcstat').textContent = src.value.length + ' chars';
-    if (r.error !== undefined) {
-      errBox.textContent = r.error;
-      errBox.style.display = 'block';
-      $('outstat').textContent = '';
-      $('outstat').className = 'stat';
-      out.style.opacity = '0.45';
-      return;
-    }
-    errBox.style.display = 'none';
-    out.style.opacity = '';
-    lastCSS = r.css;
-    renderOut();
-    $('outstat').textContent = r.css.length + ' chars · ' + r.ms.toFixed(2) + ' ms';
-    $('outstat').className = 'stat ok';
-    const mapbox = $('mapbox');
-    if (r.map !== undefined) {
-      mapbox.hidden = false;
-      $('map').textContent = r.map;
-    } else {
-      mapbox.hidden = true;
-    }
+    const seq = ++compileSeq;
+    stylRun.compile(src.value, opts).then(r => {
+      if (seq !== compileSeq) return; // superseded by a newer compile
+      if (r.error !== undefined) {
+        errBox.textContent = r.error;
+        errBox.style.display = 'block';
+        $('outstat').textContent = '';
+        $('outstat').className = 'stat';
+        out.style.opacity = '0.45';
+        return;
+      }
+      errBox.style.display = 'none';
+      out.style.opacity = '';
+      lastCSS = r.css;
+      renderOut();
+      $('outstat').textContent = r.css.length + ' chars · ' + r.ms.toFixed(2) + ' ms';
+      $('outstat').className = 'stat ok';
+      const mapbox = $('mapbox');
+      if (r.map !== undefined) {
+        mapbox.hidden = false;
+        $('map').textContent = r.map;
+      } else {
+        mapbox.hidden = true;
+      }
+    });
   }
 
   // --- wiring ----------------------------------------------------------------
@@ -532,11 +538,11 @@ button(bg = primary)
   });
 
   let examplesByName = {};
-  window.goStylReady = () => {
+  stylRun.onBoot(() => {
     ready = true;
-    $('version').textContent = 'build ' + goStyl.version;
+    $('version').textContent = 'build ' + stylRun.version();
     const sel = $('example');
-    for (const ex of goStyl.examples()) {
+    for (const ex of stylRun.examples()) {
       examplesByName[ex.name] = ex;
       const opt = document.createElement('option');
       opt.value = ex.name;
@@ -548,7 +554,7 @@ button(bg = primary)
     setTimeout(() => el.remove(), 220);
     compile();
     tutorial = gsTutorial.init();
-  };
+  });
 
   let saved = null, savedGlobals = null;
   try {
@@ -567,17 +573,6 @@ button(bg = primary)
   try { tab = localStorage.getItem('go-styl-tab') || 'play'; } catch (_) {}
   if (location.hash === '#tutorial') tab = 'tutorial';
   if (tab === 'tutorial') switchTab('tutorial');
-
-  const go = new Go();
-  // Prefer streaming; fall back for servers that mislabel .wasm's MIME type.
-  const load = WebAssembly.instantiateStreaming
-    ? WebAssembly.instantiateStreaming(fetch('styl.wasm'), go.importObject)
-        .catch(() => fetch('styl.wasm').then(r => r.arrayBuffer())
-          .then(buf => WebAssembly.instantiate(buf, go.importObject)))
-    : fetch('styl.wasm').then(r => r.arrayBuffer())
-        .then(buf => WebAssembly.instantiate(buf, go.importObject));
-  load.then(r => go.run(r.instance))
-    .catch(err => { $('loading').textContent = 'failed to load styl.wasm — ' + err; });
 })();
 </script>
 </body>
