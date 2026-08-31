@@ -28,6 +28,10 @@ func TestLexBasics(t *testing.T) {
 		{`"hello"`, []token.Kind{token.STRING, token.EOF}},
 		{"-webkit-box", []token.Kind{token.IDENT, token.EOF}},
 		{"10px solid black", []token.Kind{token.NUMBER, token.IDENT, token.IDENT, token.EOF}},
+		{"$background = black", []token.Kind{token.IDENT, token.ASSIGN, token.IDENT, token.EOF}},
+		{"err$background = red", []token.Kind{token.IDENT, token.ASSIGN, token.IDENT, token.EOF}},
+		{"size$ = 2px solid", []token.Kind{token.IDENT, token.ASSIGN, token.NUMBER, token.IDENT, token.EOF}},
+		{"border: size$2 rebeccapurple", []token.Kind{token.IDENT, token.COLON, token.IDENT, token.IDENT, token.EOF}},
 	}
 	for _, c := range cases {
 		toks, err := Lex(c.src, 1)
