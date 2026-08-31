@@ -303,10 +303,10 @@ var oneCharOps = map[rune]token.Kind{
 	',': token.COMMA, ':': token.COLON, ';': token.SEMI, '&': token.AMP,
 }
 
-func isIdentStart(c rune) bool  { return isIdentLetter(c) || c == '_' }
+func isIdentStart(c rune) bool  { return isIdentLetter(c) || c == '_' || c == '$' }
 func isIdentLetter(c rune) bool { return unicode.IsLetter(c) }
 func isIdentPart(c rune) bool {
-	return unicode.IsLetter(c) || unicode.IsDigit(c) || c == '_' || c == '-'
+	return unicode.IsLetter(c) || unicode.IsDigit(c) || c == '_' || c == '-' || c == '$'
 }
 
 func isHex(c rune) bool {
