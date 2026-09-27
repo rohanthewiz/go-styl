@@ -381,6 +381,8 @@ button(bg = primary)
 
   // --- tabs --------------------------------------------------------------------
   let tutorial = null;
+  // Lesson id from a #tut/<id> deep link at load time ('' when none).
+  const linkedLesson = gsTutorial.lessonFromHash(location.hash);
   function switchTab(name) {
     document.body.dataset.tab = name;
     $('view-play').hidden = name !== 'play';
@@ -388,6 +390,13 @@ button(bg = primary)
     $('tab-play').classList.toggle('on', name === 'play');
     $('tab-tutorial').classList.toggle('on', name === 'tutorial');
     try { localStorage.setItem('go-styl-tab', name); } catch (_) {}
+    // The tutorial tab keeps the URL on #tut/<lesson>; leaving it drops a
+    // tutorial hash so the play tab's URL doesn't point back at a lesson.
+    if (name === 'tutorial') {
+      if (tutorial) tutorial.syncHash();
+    } else if (/^#tut(orial)?(\/|$)/.test(location.hash)) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
   }
   $('tab-play').addEventListener('click', () => switchTab('play'));
   $('tab-tutorial').addEventListener('click', () => switchTab('tutorial'));
@@ -553,7 +562,16 @@ button(bg = primary)
     el.style.opacity = '0';
     setTimeout(() => el.remove(), 220);
     compile();
-    tutorial = gsTutorial.init();
+    tutorial = gsTutorial.init({ lesson: linkedLesson });
+  });
+
+  // A #tut/<id> link opened while the page is already loaded (clicked in a
+  // lesson, or pasted into the address bar) switches to that lesson.
+  window.addEventListener('hashchange', () => {
+    const id = gsTutorial.lessonFromHash(location.hash);
+    if (id && tutorial && tutorial.openId(id)) switchTab('tutorial');
+    else if (location.hash === '#tutorial') switchTab('tutorial');
+    else if (id && tutorial) tutorial.syncHash(); // unknown lesson: back to the open one
   });
 
   let saved = null, savedGlobals = null;
@@ -568,10 +586,11 @@ button(bg = primary)
     $('globalsbox').open = true;
   }
 
-  // Restore the last-open tab; #tutorial in the URL forces the tutorial.
+  // Restore the last-open tab; #tutorial or a #tut/<lesson> deep link in the
+  // URL forces the tutorial (the lesson opens once the compiler boots).
   let tab = 'play';
   try { tab = localStorage.getItem('go-styl-tab') || 'play'; } catch (_) {}
-  if (location.hash === '#tutorial') tab = 'tutorial';
+  if (location.hash === '#tutorial' || linkedLesson) tab = 'tutorial';
   // Always switch, even to the default play tab, so body[data-tab] is set
   // from the first paint and CSS keyed on it applies to both tabs.
   switchTab(tab === 'tutorial' ? 'tutorial' : 'play');

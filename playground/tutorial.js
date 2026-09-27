@@ -1174,7 +1174,10 @@ for i in 1..3
 // ---------------------------------------------------------------------------
 // Tutorial UI
 // ---------------------------------------------------------------------------
-function init() {
+// init builds the tutorial UI. opts.lesson (a lesson id, from a #tut/<id>
+// deep link) picks the starting lesson; otherwise the last-open lesson is
+// restored from localStorage.
+function init(opts) {
   const $ = id => document.getElementById(id);
   const doc = $('tut-doc'), navEl = $('tut-navlist');
   const ta = $('tsrc'), hlCode = $('tsrcHl');
@@ -1193,6 +1196,8 @@ function init() {
   catch (_) { done = new Set(); }
   let cur = Math.min(LESSONS.length - 1,
     Math.max(0, parseInt(store.read('go-styl-tut-cur', '0'), 10) || 0));
+  const linked = indexOf(opts && opts.lesson);
+  if (linked >= 0) cur = linked;
   let lastCSS = '';
 
   const hlOn = () => !document.body.classList.contains('nohl');
@@ -1225,9 +1230,20 @@ function init() {
     $('tut-solution').style.display = LESSONS[cur].solution ? '' : 'none';
   }
 
+  // syncHash keeps the address bar on #tut/<id> while the tutorial tab is
+  // showing, so the URL is always a deep link to the open lesson.
+  // replaceState (not location.hash) avoids a history entry per lesson and a
+  // hashchange event back into this code.
+  function syncHash() {
+    if (document.body.dataset.tab !== 'tutorial') return;
+    const h = '#tut/' + LESSONS[cur].id;
+    if (location.hash !== h) history.replaceState(null, '', h);
+  }
+
   function open(i) {
     cur = i;
     store.write('go-styl-tut-cur', String(i));
+    syncHash();
     const l = LESSONS[i];
     doc.innerHTML = l.prose.map(block).join('');
     doc.scrollTop = 0;
@@ -1322,10 +1338,32 @@ function init() {
   });
 
   open(cur);
-  return { compile, repaint: () => { repaint(); renderOut(); } };
+  return {
+    compile,
+    repaint: () => { repaint(); renderOut(); },
+    syncHash,
+    // openId opens the lesson with this id; false when there is none.
+    openId(id) {
+      const i = indexOf(id);
+      if (i < 0) return false;
+      if (i !== cur) open(i); else syncHash();
+      return true;
+    },
+  };
 }
 
-const api = { LESSONS, init };
+// indexOf returns the position of the lesson with this id, or -1.
+function indexOf(id) {
+  return id ? LESSONS.findIndex(l => l.id === id) : -1;
+}
+
+// lessonFromHash returns the lesson id in a #tut/<id> hash, or ''.
+function lessonFromHash(hash) {
+  const m = /^#tut\/([\w-]+)$/.exec(hash || '');
+  return m ? m[1] : '';
+}
+
+const api = { LESSONS, init, lessonFromHash };
 if (typeof window !== 'undefined') window.gsTutorial = api;
 if (typeof module !== 'undefined') module.exports = api;
 })();

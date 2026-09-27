@@ -70,8 +70,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   `line`/`col`.
 - **N-017** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
   Playground: shareable URLs (source in the hash).
-- **N-018** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
-  Tutorial lesson deep-links (`#tut/<id>`). Only `#tutorial` is handled today.
 - **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
   A Go highlighter for `go` blocks in tutorial prose (currently escaped plain
   text).
@@ -103,6 +101,13 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-018** · raised `2026-0706-1250-playground-highlighting-tutorial` · closed 2026-09-27, `2026-0927-1653-go-styl-tutorial-deep-links`
+  Tutorial deep links. `#tut/<lesson-id>` opens the tutorial at that lesson,
+  at load (`gsTutorial.init({lesson})`) or via `hashchange`. While the
+  tutorial tab shows, the address bar tracks the open lesson
+  (`replaceState`). The play tab clears a tutorial hash, an unknown id snaps
+  back to the open lesson, and `#tutorial` still works. Browser-verified.
 
 - **N-007** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · closed 2026-09-27, `2026-0927-1650-go-styl-extensions-decision`
   Decision: keep the go-styl extensions ungated. They're listed in a new
