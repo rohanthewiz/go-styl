@@ -4,8 +4,13 @@
 // playground. It installs a global `goStyl` object with:
 //
 //	goStyl.compile(src, {pretty, mergeDuplicates, sourcemap,
-//	                     globals, customProperties}) ->
-//	    {css, map, ms} | {error, file, line, col, ms}
+//	                     globals, customProperties, pruneHTML}) ->
+//	    {css, map, pruned, used, ms} | {error, file, line, col, ms}
+//
+// With pruneHTML (a rendered page), the result also carries `pruned`: the
+// stylesheet reduced to the rules that page uses (styl.Prune, the engine
+// behind critical-CSS middleware), and `used`: the names found in the HTML
+// as {classes, ids, tags}.
 //	goStyl.examples() -> [{name, source}]
 //	goStyl.version -> module version string
 //
@@ -53,8 +58,12 @@ func compile(_ js.Value, args []js.Value) any {
 		Filename: "playground.styl",
 	}
 	sourceMap := false
+	pruneHTML := ""
 	if len(args) > 1 && args[1].Type() == js.TypeObject {
 		o := args[1]
+		if v := o.Get("pruneHTML"); v.Type() == js.TypeString {
+			pruneHTML = v.String()
+		}
 		if v := o.Get("pretty"); v.Type() == js.TypeBoolean {
 			opts.Pretty = v.Bool()
 		}
@@ -91,6 +100,23 @@ func compile(_ js.Value, args []js.Value) any {
 	if sourceMap {
 		out["map"] = res.Map
 	}
+	if pruneHTML != "" {
+		// The full build above already succeeded, so Prune (same source and
+		// options) only differs in which rules it keeps.
+		used := styl.UsedFromHTML(pruneHTML)
+		pruned, err := styl.Prune(src, used, opts)
+		if err != nil {
+			out["pruneError"] = err.Error()
+		} else {
+			out["pruned"] = pruned
+		}
+		out["used"] = map[string]any{
+			"classes": toAny(used.Classes),
+			"ids":     toAny(used.IDs),
+			"tags":    toAny(used.Tags),
+		}
+		out["ms"] = float64(time.Since(start).Microseconds()) / 1000
+	}
 	return out
 }
 
@@ -117,6 +143,16 @@ func toGlobals(o js.Value) map[string]any {
 		return nil
 	}
 	return g
+}
+
+// toAny converts a []string into a []any, the element type syscall/js can
+// turn into a JS array.
+func toAny(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
 }
 
 // toStrings converts a JS array into a []string, skipping non-string entries.

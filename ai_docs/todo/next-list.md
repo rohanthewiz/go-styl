@@ -59,9 +59,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   after `2026-0703-0959-playground-globals-exposure`.
 - **N-013** · raised `2026-0703-0959-playground-globals-exposure` · value low
   Dev-mode live reload for stylserve (killer features, honorable mention).
-- **N-014** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · value low
-  Playground pane that prunes the compiled CSS against pasted HTML (M15
-  exposure).
 
 ## Roadmap
 
@@ -90,6 +87,13 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-014** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · closed 2026-09-27, `2026-0927-1704-go-styl-playground-prune-pane`
+  Playground "prune to HTML (critical CSS)" box under the CSS output. With
+  pasted HTML, the output shows `styl.Prune`'s result, with the size saving
+  and the tag/class/id counts found. It works through a new `pruneHTML`
+  compile option in the WASM API (result gains `pruned`, `used`). The HTML
+  is saved locally and included in share links. Browser-verified.
 
 - **N-015** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · closed 2026-09-27, `2026-0927-1702-go-styl-nethttp-critical`
   `stylhttp.Critical(stylcrit.Options) func(http.Handler) http.Handler`, the

@@ -155,9 +155,9 @@
     font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     white-space: pre-wrap;
   }
-  details#mapbox, details#globalsbox { border-top: 1px solid var(--edge); background: var(--panel); }
-  details#mapbox summary, details#globalsbox summary { padding: .35rem .9rem; font-size: .78rem; color: var(--dim); cursor: pointer; user-select: none; }
-  #globals {
+  details#mapbox, details#globalsbox, details#prunebox { border-top: 1px solid var(--edge); background: var(--panel); }
+  details#mapbox summary, details#globalsbox summary, details#prunebox summary { padding: .35rem .9rem; font-size: .78rem; color: var(--dim); cursor: pointer; user-select: none; }
+  #globals, #prunehtml {
     display: block; width: 100%; height: 6.5rem; padding: .5rem .9rem;
     border: 0; border-top: 1px solid var(--edge); resize: vertical;
     background: transparent; color: var(--fg);
@@ -312,6 +312,12 @@ primary = #0af
   <section class="pane">
     <div class="bar">css out<span class="stat" id="outstat"></span></div>
     <pre class="out" id="out"></pre>
+    <details id="prunebox">
+      <summary>prune to HTML (critical CSS) <span id="prunestat"></span></summary>
+      <textarea id="prunehtml" spellcheck="false" autocapitalize="off" autocomplete="off"
+        placeholder="<!-- paste a rendered page: the output keeps only the rules its tags, classes and IDs use (styl.Prune) -->
+<div class=&quot;card&quot;><button class=&quot;btn&quot;>ok</button></div>"></textarea>
+    </details>
     <details id="mapbox" hidden><summary>source map</summary><pre id="map"></pre></details>
   </section>
 </main>
@@ -455,6 +461,7 @@ button(bg = primary)
       try {
         localStorage.setItem('go-styl-src', src.value);
         localStorage.setItem('go-styl-globals', $('globals').value);
+        localStorage.setItem('go-styl-prunehtml', $('prunehtml').value);
       } catch (_) {}
     }
     const opts = {
@@ -462,6 +469,9 @@ button(bg = primary)
       mergeDuplicates: $('merge').checked,
       sourcemap: $('sourcemap').checked,
     };
+    // The prune box only applies while it is open and holds some HTML.
+    const pruneHTML = $('prunebox').open ? $('prunehtml').value.trim() : '';
+    if (pruneHTML) opts.pruneHTML = pruneHTML;
     const gs = goSideOptions();
     const nGlobals = Object.keys(gs.globals).length;
     if (nGlobals) opts.globals = gs.globals;
@@ -490,8 +500,20 @@ button(bg = primary)
       srcMark.clear();
       out.style.opacity = '';
       lastCSS = r.css;
+      let size = r.css.length + ' chars';
+      if (r.pruned !== undefined) {
+        // Show what a page with this HTML would inline.
+        lastCSS = r.pruned;
+        const pct = r.css.length ? Math.round(100 * (1 - r.pruned.length / r.css.length)) : 0;
+        size = 'pruned ' + r.pruned.length + ' of ' + r.css.length + ' chars (−' + pct + '%)';
+      }
+      const u = r.used;
+      $('prunestat').textContent = u
+        ? '· ' + u.tags.length + ' tags · ' + u.classes.length + ' classes · ' + u.ids.length + ' ids' +
+          (r.pruneError ? ' · prune failed: ' + r.pruneError : '')
+        : '';
       renderOut();
-      $('outstat').textContent = r.css.length + ' chars · ' + r.ms.toFixed(2) + ' ms';
+      $('outstat').textContent = size + ' · ' + r.ms.toFixed(2) + ' ms';
       $('outstat').className = 'stat ok';
       const mapbox = $('mapbox');
       if (r.map !== undefined) {
@@ -509,7 +531,8 @@ button(bg = primary)
   //   #z/<base64url(deflate-raw(JSON))>   compressed (CompressionStream)
   //   #u/<base64url(UTF-8 JSON)>          fallback where CompressionStream is missing
   //
-  // JSON: { s: source, g: globals text, o: { pretty, merge, sourcemap } }.
+  // JSON: { s: source, g: globals text, p: prune HTML (when the box is
+  // open), o: { pretty, merge, sourcemap } }.
   // Opening a link loads that code without overwriting the visitor's saved
   // draft: persist stays false (compile() skips localStorage) until they
   // edit, and the first edit drops the now-stale hash.
@@ -555,6 +578,8 @@ button(bg = primary)
     src.value = st.s;
     $('globals').value = typeof st.g === 'string' ? st.g : '';
     $('globalsbox').open = !!st.g;
+    $('prunehtml').value = typeof st.p === 'string' ? st.p : '';
+    $('prunebox').open = !!st.p;
     const o = st.o || {};
     $('pretty').checked = o.pretty !== false;
     $('merge').checked = !!o.merge;
@@ -573,6 +598,7 @@ button(bg = primary)
     const hash = await encodeShare({
       s: src.value,
       g: $('globals').value,
+      p: $('prunebox').open ? $('prunehtml').value : '',
       o: { pretty: $('pretty').checked, merge: $('merge').checked, sourcemap: $('sourcemap').checked },
     });
     history.replaceState(null, '', hash);
@@ -588,6 +614,8 @@ button(bg = primary)
   // --- wiring ----------------------------------------------------------------
   src.addEventListener('input', () => { endShare(); schedule(); });
   $('globals').addEventListener('input', () => { endShare(); schedule(); });
+  $('prunehtml').addEventListener('input', () => { endShare(); schedule(); });
+  $('prunebox').addEventListener('toggle', compile);
   for (const id of ['pretty', 'merge', 'sourcemap'])
     $(id).addEventListener('change', compile);
   hlBox.addEventListener('change', () => {
@@ -684,11 +712,13 @@ button(bg = primary)
     else if (id && tutorial) tutorial.syncHash(); // unknown lesson: back to the open one
   });
 
-  let saved = null, savedGlobals = null;
+  let saved = null, savedGlobals = null, savedPrune = null;
   try {
     saved = localStorage.getItem('go-styl-src');
     savedGlobals = localStorage.getItem('go-styl-globals');
+    savedPrune = localStorage.getItem('go-styl-prunehtml');
   } catch (_) {}
+  if (savedPrune) $('prunehtml').value = savedPrune;
   src.value = saved || DEFAULT;
   repaintSrc();
   if (savedGlobals) {
