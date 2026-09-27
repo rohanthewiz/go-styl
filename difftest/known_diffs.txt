@@ -7,6 +7,7 @@
 # Every remaining entry is a deliberate go-styl extension or a reference-stylus
 # failure. Mark genuine deviations worth fixing [compat-bug?] and missing
 # stylus features [compat-gap].
+difftest/corpus/bare-pseudo.styl a bare nested :hover / ::before attaches to the parent in go-styl (documented extension, same as &:hover); stylus makes it a descendant (.btn :hover)
 difftest/corpus/undefined-mixin.styl a call to an undefined mixin is an error in go-styl ("undefined mixin"); stylus drops it silently. Deliberate: it finds dead calls
 examples/03-mixins-functions.styl +mixin() call without a block: go-styl treats it as a plain call; stylus requires a block ("expected indent")
 examples/05-builtins.styl reference stylus 0.64 crashes internally (TypeError in its builtin plumbing) on this builtins mix

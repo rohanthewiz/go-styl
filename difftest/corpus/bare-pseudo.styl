@@ -1,0 +1,9 @@
+// A nested pseudo-class line without `&` attaches to its parent in go-styl
+// (.btn:hover), a documented convenience. Reference stylus reads it as a
+// descendant (.btn :hover), which is almost never what the author meant.
+.btn
+  color black
+  :hover
+    color red
+  ::before
+    content ''

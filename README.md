@@ -482,6 +482,10 @@ CSS, go-styl chooses differently on purpose:
   this for compressed values between -1 and 1 and prints
   `.30000000000000004`. Very small numbers print in decimal form
   (`.00000001`) where Stylus prints JavaScript's `1e-8`.
+- **A bare nested pseudo-class attaches to its parent.** `.btn` over
+  `:hover` gives `.btn:hover`, the same as `&:hover`. Stylus reads it as a
+  descendant (`.btn :hover`, any hovered element inside `.btn`), which is
+  almost never intended. Write `& :hover` for the descendant form.
 - **Comment lines never affect structure.** In Stylus, the indentation of a
   `//` line counts: a column-0 comment between `m()` and its body ends the
   definition (the body lands at the root), and a comment indented deeper

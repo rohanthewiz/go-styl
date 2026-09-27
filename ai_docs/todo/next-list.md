@@ -106,10 +106,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   Tutorial's "where to next" lesson: link to element's tutorial
   (https://rohanthewiz.github.io/element/#tutorial), mirroring element's link
   here.
-- **N-035** · raised `2026-0927-1357-go-styl-multiline-selectors` · value low
-  A nested selector that starts with a pseudo-class joins its parent without
-  a space: `.x` over `:hover` gives `.x:hover`, while Stylus gives
-  `.x :hover` (a descendant). Found while probing N-024.
 - **N-036** · raised `2026-0927-1525-go-styl-string-escapes` · value low
   String operations. `length("abc")` is 3 in Stylus (it counts characters) but
   1 in go-styl, which treats the string as a one-item list. `"x" + "y"` (and
@@ -137,6 +133,13 @@ Wanted, but deferred on purpose.
   Stylus-style vendor-prefixed `@keyframes` copies (`@-moz-`, `@-webkit-`,
   `@-o-`). "Probably skip — obsolete"; kept as a known diff for
   `examples/08-at-rules.styl`.
+- **N-035** · declined `2026-0927-1637-go-styl-bare-pseudo-decision` —
+  Stylus's descendant reading of a bare nested pseudo-class (`.x` over `:hover` → `.x :hover`). go-styl attaches it
+  (`.x:hover`), a convenience the README and the playground tutorial
+  already document. That's almost always what the author meant, and
+  switching would silently change sheets written from the tutorial.
+  Recorded under README "Deliberate differences"; pinned by
+  `difftest/corpus/bare-pseudo.styl`. `& :hover` gives the descendant form.
 
 ## Closed
 
