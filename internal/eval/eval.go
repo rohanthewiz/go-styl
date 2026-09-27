@@ -577,9 +577,70 @@ func (ev *evaluator) evalExpr(e ast.Expr, scope *Scope) (value.Value, error) {
 		return &value.List{Items: items, Comma: x.Comma}, nil
 	case *ast.Call:
 		return ev.evalCall(x, scope)
+	case *ast.Index:
+		return ev.evalIndex(x, scope)
 	default:
 		return nil, fmt.Errorf("cannot evaluate expression %T", e)
 	}
+}
+
+// evalIndex evaluates a subscript the way Stylus does (visitMember/
+// visitIndex): indexes are 0-based and a negative one counts from the end
+// (r[-1] is the last item). A single value indexes as a one-item list, so
+// 5px[0] is 5px. An index past either end gives null, which prints as
+// nothing. A list or range index (r[0 1], r[0..1]) selects each item in turn
+// and returns them as a space-separated list.
+func (ev *evaluator) evalIndex(ix *ast.Index, scope *Scope) (value.Value, error) {
+	v, err := ev.evalExpr(ix.X, scope)
+	if err != nil {
+		return nil, err
+	}
+	idx, err := ev.evalExpr(ix.Index, scope)
+	if err != nil {
+		return nil, err
+	}
+	v, idx = value.Deref(v), value.Deref(idx)
+
+	var items []value.Value
+	switch t := v.(type) {
+	case *value.List:
+		items = t.Items
+	case value.Null, *value.Null:
+		items = nil
+	default:
+		items = []value.Value{v}
+	}
+
+	pick := func(n value.Value) (value.Value, error) {
+		num, ok := value.Deref(n).(*value.Number)
+		if !ok {
+			return nil, fmt.Errorf("list index must be a number, got %s", n.TypeName())
+		}
+		i := int(num.Num)
+		if i < 0 {
+			i += len(items)
+		}
+		if i < 0 || i >= len(items) {
+			return value.Null{}, nil
+		}
+		return items[i], nil
+	}
+
+	if list, ok := idx.(*value.List); ok {
+		out := make([]value.Value, 0, len(list.Items))
+		for _, n := range list.Items {
+			it, err := pick(n)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, it)
+		}
+		if len(out) == 1 {
+			return out[0], nil
+		}
+		return &value.List{Items: out}, nil
+	}
+	return pick(idx)
 }
 
 func (ev *evaluator) evalUnary(u *ast.Unary, scope *Scope) (value.Value, error) {

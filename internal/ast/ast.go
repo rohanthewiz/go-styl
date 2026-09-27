@@ -228,6 +228,14 @@ type List struct {
 	Comma bool // true for comma-separated, false for space-separated
 }
 
+// Index is a subscript, e.g. list[1] or list[0 1]. The index evaluates to
+// a number (0-based, negative from the end) or a list of numbers (or a
+// range), which selects several items.
+type Index struct {
+	X     Expr
+	Index Expr
+}
+
 func (*NumberLit) exprNode() {}
 func (*ColorLit) exprNode()  {}
 func (*StringLit) exprNode() {}
@@ -236,3 +244,4 @@ func (*Unary) exprNode()     {}
 func (*Binary) exprNode()    {}
 func (*Call) exprNode()      {}
 func (*List) exprNode()      {}
+func (*Index) exprNode()     {}

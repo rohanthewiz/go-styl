@@ -63,10 +63,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   them. Dropped off the list after
   `2026-0701-2034-m11-wasm-playground-deploy`. A standalone `{expr}` is also
   unsupported anywhere in a file that uses braces; `s("…%s…", x)` avoids it.
-- **N-008** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · value low
-  List indexing `r[1]`. Still missing: `unexpected "[" in expression`; Stylus
-  gives the second element. Dropped off the list after
-  `2026-0701-2034-m11-wasm-playground-deploy`.
 - **N-009** · raised `2026-0703-0846-m13-runtime-theming` · value low
   Scoped component styles, `styl.Component` with hashed class names (the
   first half of killer feature #3), feeding the same `GoSource` renderer as
@@ -134,6 +130,14 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-008** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · closed 2026-09-27, `2026-0927-1643-go-styl-list-indexing`
+  List indexing. New `ast.Index`, parsed as a postfix on any operand when
+  `[` is glued to it (`r[1]`, `(1 2 3)[1]`, `r[0][1]`). `evalIndex`: 0-based,
+  negative from the end, past either end → null, a scalar is a one-item
+  list, and a list or range index (`r[0 1]`, `r[0..1]`) returns several items.
+  Tests in `index_test.go` match stylus 0.64. Hash/object members and
+  subscript assignment (`r[1] = x`) are not supported (go-styl has no hashes).
 
 - **N-037** · raised `2026-0927-1625-go-styl-semicolons` · closed 2026-09-27, `2026-0927-1640-go-styl-brace-parens-semicolon`
   `;` inside parentheses in brace syntax. `scanStructural` tracks `( )`

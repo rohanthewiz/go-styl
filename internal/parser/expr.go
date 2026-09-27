@@ -173,7 +173,35 @@ func (p *exprParser) parseUnary() (ast.Expr, error) {
 	}
 }
 
+// parsePrimary parses one operand and any subscripts glued to it: `r[1]`,
+// `f(x)[0]`, `(1 2 3)[-1]`, `r[0][1]`. The `[` must touch the operand; with
+// whitespace before it (`1fr [main-start]`) it is not a subscript, which
+// leaves room for CSS grid line names.
 func (p *exprParser) parsePrimary() (ast.Expr, error) {
+	x, err := p.parseOperand()
+	if err != nil {
+		return nil, err
+	}
+	for p.cur().Kind == token.LBRACKET && !p.cur().SpaceBefore {
+		p.next()
+		p.depth++
+		idx, err := p.parseValue()
+		p.depth--
+		if err != nil {
+			return nil, err
+		}
+		if p.cur().Kind != token.RBRACKET {
+			return nil, diag.Errorf(p.line, 0, "expected ']'")
+		}
+		p.next()
+		x = &ast.Index{X: x, Index: idx}
+	}
+	return x, nil
+}
+
+// parseOperand parses a single literal, identifier, call or parenthesized
+// expression.
+func (p *exprParser) parseOperand() (ast.Expr, error) {
 	t := p.cur()
 	switch t.Kind {
 	case token.NUMBER:
