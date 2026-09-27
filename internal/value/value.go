@@ -4,6 +4,7 @@ package value
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -67,10 +68,11 @@ func (s *SlashList) CSS(pretty bool) string {
 func (n *Number) TypeName() string { return "unit" }
 func (n *Number) String() string   { return n.CSS(true) }
 func (n *Number) CSS(pretty bool) string {
-	if !pretty && n.Num == 0 && n.Unit != "" && !zeroKeepUnits[strings.ToLower(n.Unit)] {
+	// Format first, so a value that only rounds to zero counts as zero below.
+	s := formatNum(n.Num)
+	if !pretty && s == "0" && n.Unit != "" && !zeroKeepUnits[strings.ToLower(n.Unit)] {
 		return "0" // compressed zero lengths drop the unit, as in stylus
 	}
-	s := strconv.FormatFloat(n.Num, 'f', -1, 64)
 	if !pretty {
 		switch {
 		case strings.HasPrefix(s, "0."):
@@ -80,6 +82,28 @@ func (n *Number) CSS(pretty bool) string {
 		}
 	}
 	return s + n.Unit
+}
+
+// formatNum prints a number the way Stylus does: rounded to 15 decimal
+// places, then in its shortest form (parseFloat(n.toFixed(15)) in Stylus's
+// compiler). This hides binary floating-point noise from arithmetic, so
+// 1rem * 1.8 prints 1.8rem rather than 1.7999999999999998rem.
+//
+// Stylus skips the rounding for a compressed number between -1 and 1, and
+// would print .30000000000000004 for 0.1 + 0.2. go-styl rounds every
+// number, since the noise is never intended.
+func formatNum(f float64) string {
+	if f == math.Trunc(f) {
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
+	rounded, err := strconv.ParseFloat(strconv.FormatFloat(f, 'f', 15, 64), 64)
+	if err != nil {
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
+	if rounded == 0 {
+		rounded = 0 // a tiny negative rounds to -0; print it as 0
+	}
+	return strconv.FormatFloat(rounded, 'f', -1, 64)
 }
 
 // zeroKeepUnits are units that stay on a zero value even compressed: unlike

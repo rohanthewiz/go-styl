@@ -12,6 +12,12 @@ func TestNumberCSS(t *testing.T) {
 		{0.5, "", "0.5", ".5"},
 		{-0.25, "em", "-0.25em", "-.25em"},
 		{1.5, "rem", "1.5rem", "1.5rem"},
+		// Floating-point noise is rounded away at 15 decimals, as in Stylus.
+		{1.7999999999999998, "rem", "1.8rem", "1.8rem"},
+		{0.1 + 0.2, "", "0.3", ".3"},
+		{1.0 / 3, "em", "0.333333333333333em", ".333333333333333em"},
+		{-1e-17, "px", "0px", "0"},
+		{123456.789, "px", "123456.789px", "123456.789px"},
 	}
 	for _, c := range cases {
 		n := &Number{Num: c.num, Unit: c.unit}

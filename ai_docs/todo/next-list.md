@@ -109,15 +109,12 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
   zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). Blocked by N-029 and N-030
-  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors, N-025 trailing `&`, N-026 string escapes, N-027 semicolons and N-028 sprintf are closed). With every gap patched around in a
+  dependency (cema branch `roh/use-go-styl`). Blocked by N-030
+  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors, N-025 trailing `&`, N-026 string escapes, N-027 semicolons, N-028 sprintf and N-029 number formatting are closed). With every gap patched around in a
   scratch copy, the remaining diffs were all go-styl bugs listed here, plus
   cema-side source quirks that
   cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
   `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
-- **N-029** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value low
-  Number formatting: `mf-font-size * 1.8` prints `1.7999999999999998rem`
-  where Stylus prints `1.8rem`. Renders the same.
 - **N-030** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value low
   A statement-level call to an undefined mixin (`sermon()`, a bodiless
   `payment_form()`) is an error in go-styl but silently dropped by Stylus.
@@ -159,6 +156,13 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-029** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1630-go-styl-number-formatting`
+  Number formatting. `formatNum` (`internal/value/value.go`) rounds to 15
+  decimal places and then prints the shortest form, like Stylus's
+  `parseFloat(n.toFixed(15))`, so `1rem * 1.8` prints `1.8rem`. Unlike
+  Stylus, compressed numbers between -1 and 1 are rounded too. A value that
+  rounds to zero drops its unit when compressed. Tests in `TestNumberCSS`.
 
 - **N-028** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1628-go-styl-sprintf-operator`
   Stylus's sprintf operator. `evalBinary` sends a string `%` to the `s()`
