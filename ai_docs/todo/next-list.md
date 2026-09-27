@@ -29,7 +29,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-036
+**Next ID:** N-037
 
 ## Open
 
@@ -109,15 +109,12 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
   zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). Blocked by N-026…N-030
-  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors and N-025 trailing `&` are closed). With every gap patched around in a
+  dependency (cema branch `roh/use-go-styl`). Blocked by N-027…N-030
+  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors, N-025 trailing `&` and N-026 string escapes are closed). With every gap patched around in a
   scratch copy, the remaining diffs were all go-styl bugs listed here, plus
   cema-side source quirks that
   cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
   `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
-- **N-026** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
-  Backslash escapes in strings are dropped: `content "\2022"` outputs
-  `"2022"`, so the page shows the text instead of a bullet. Silent wrong CSS.
 - **N-027** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Semicolons in indentation syntax: a trailing `;` (`margin: 0 auto;`) and
   several declarations on one line (`color:black; background: #72962d`) are
@@ -137,6 +134,11 @@ session's attempt to compile cema's stylesheets with go-styl.
   A nested selector that starts with a pseudo-class joins its parent without
   a space: `.x` over `:hover` gives `.x:hover`, while Stylus gives
   `.x :hover` (a descendant). Found while probing N-024.
+- **N-036** · raised `2026-0927-1525-go-styl-string-escapes` · value low
+  String operations. `length("abc")` is 3 in Stylus (it counts characters) but
+  1 in go-styl, which treats the string as a one-item list. `"x" + "y"` (and
+  `"x" + y`) joins into `'xy'` in Stylus but is `cannot apply "+" to string
+  and string` in go-styl. Found while probing N-026.
 
 ## Roadmap
 
@@ -176,6 +178,14 @@ are recorded in the session docs.
   Stylus's requireHistory. Tests in `require_test.go` match stylus 0.64. The one
   known difference: a literal `.css` require passes through, while Stylus
   fails if the `.css` file doesn't exist.
+
+- **N-026** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1525-go-styl-string-escapes`
+  Backslash escapes in strings. The lexer's `scanString` keeps each `\` and
+  the rune after it verbatim, so a string's value is its raw source text as
+  in Stylus (`"\2022"`, `"\f101"`, `unquote("\2022")` → `\2022`). An
+  escaped quote stays inside the string (`'it\'s'`), where Stylus fails to
+  parse. Tests in `string_escape_test.go` and `TestLexStringEscapes` match
+  stylus 0.64.
 
 - **N-025** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1423-go-styl-trailing-parent-ref`
   A parent reference anywhere in a selector. `combine` (`internal/eval/selector.go`)

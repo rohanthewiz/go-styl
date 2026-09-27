@@ -113,3 +113,27 @@ func TestLexNumberUnit(t *testing.T) {
 		t.Errorf("got %v %q, want NUMBER \"10px\"", toks[0].Kind, toks[0].Text)
 	}
 }
+
+// TestLexStringEscapes checks that a string token's text keeps backslash
+// escapes verbatim, and that an escaped quote does not end the string.
+func TestLexStringEscapes(t *testing.T) {
+	cases := []struct{ src, want string }{
+		{`"\2022"`, `\2022`},
+		{`'\f101'`, `\f101`},
+		{`"back\\slash"`, `back\\slash`},
+		{`'it\'s'`, `it\'s`},
+		{`"say \"hi\""`, `say \"hi\"`},
+	}
+	for _, c := range cases {
+		toks, err := Lex(c.src, 1)
+		if err != nil {
+			t.Fatalf("Lex(%q): %v", c.src, err)
+		}
+		if len(toks) != 2 || toks[0].Kind != token.STRING {
+			t.Fatalf("Lex(%q) = %v, want one STRING", c.src, kinds(toks))
+		}
+		if toks[0].Text != c.want {
+			t.Errorf("Lex(%q) text = %q, want %q", c.src, toks[0].Text, c.want)
+		}
+	}
+}

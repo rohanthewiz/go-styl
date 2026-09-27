@@ -101,6 +101,13 @@ func (l *lexer) scanString() error {
 	for l.pos < len(l.src) {
 		c := l.src[l.pos]
 		if c == '\\' && l.pos+1 < len(l.src) {
+			// Escapes are kept verbatim (backslash included), as Stylus
+			// does: the string's value is its raw source text, so CSS escapes
+			// like "\2022" or "\f101" reach the output intact, and
+			// length("\2022") is 5. Pairing the backslash with the next rune
+			// only keeps an escaped quote (`'it\'s'`) from ending the string.
+			// Stylus instead fails to parse that case.
+			b.WriteRune(c)
 			b.WriteRune(l.src[l.pos+1])
 			l.pos += 2
 			continue
