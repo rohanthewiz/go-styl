@@ -45,6 +45,62 @@ func (ev *evaluator) interpolate(s string, scope *Scope) (string, error) {
 	return b.String(), nil
 }
 
+// interpolateString resolves `{expr}` inside a quoted string literal, a
+// go-styl extension (Stylus keeps string contents literal). To keep the
+// extension from changing strings that were never meant to be templates, a
+// group is substituted only when it parses as an expression that references
+// a variable in scope:
+//
+//	p = col
+//	"x-{p}"     → "x-col"     (p is a variable)
+//	"{nope}"    → "{nope}"    (no variable: literal, as in Stylus)
+//	"{1 + 2}"   → "{1 + 2}"   (no variable: literal)
+//	"\{p}"      → "\{p}"      (escaped: literal, as in Stylus)
+//
+// Anything left literal is copied byte for byte, backslash included, so the
+// output matches Stylus's.
+func (ev *evaluator) interpolateString(s string, scope *Scope) (string, error) {
+	if !strings.Contains(s, "{") {
+		return s, nil
+	}
+	runes := []rune(s)
+	var b strings.Builder
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		if c == '\\' && i+1 < len(runes) {
+			// An escape (N-026 keeps these verbatim): copy it and the rune
+			// after it, so `\{` never opens a group.
+			b.WriteRune(c)
+			b.WriteRune(runes[i+1])
+			i++
+			continue
+		}
+		if c != '{' {
+			b.WriteRune(c)
+			continue
+		}
+		end := matchBrace(runes, i)
+		if end < 0 {
+			b.WriteString(string(runes[i:])) // unterminated: keep literally
+			break
+		}
+		src := strings.TrimSpace(string(runes[i+1 : end]))
+		e, err := parser.ParseExpr(src, 0)
+		if err != nil || !refsVariable(e, scope) {
+			b.WriteString(string(runes[i : end+1]))
+			i = end
+			continue
+		}
+		out, err := ev.evalString(src, scope)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(out)
+		i = end
+	}
+	return b.String(), nil
+}
+
 // evalString parses and evaluates a single expression from raw source, returning
 // its CSS form. It is the bridge used to resolve interpolation contents.
 func (ev *evaluator) evalString(src string, scope *Scope) (string, error) {

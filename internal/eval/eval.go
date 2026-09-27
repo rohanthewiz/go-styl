@@ -525,7 +525,7 @@ func (ev *evaluator) evalExpr(e ast.Expr, scope *Scope) (value.Value, error) {
 	case *ast.ColorLit:
 		return value.ParseColor(x.Text)
 	case *ast.StringLit:
-		val, err := ev.interpolate(x.Value, scope)
+		val, err := ev.interpolateString(x.Value, scope)
 		if err != nil {
 			return nil, err
 		}

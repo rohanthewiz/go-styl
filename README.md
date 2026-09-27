@@ -14,7 +14,8 @@ Under active development -- consider this Alpha. The compiler currently supports
 - Indentation-based nesting with `&` parent references and pseudo-class attachment
 - Compile-time **variables** (inlined, with lexical scoping) and `?=` conditional assignment
 - Unit-aware **arithmetic** (`+ - * / %`) and comparisons
-- Comma and space **value lists**
+- Comma and space **value lists**, with indexing (`list[0]`, `list[-1]`,
+  `list[0..1]`)
 - **Control flow**: `if` / `else if` / `else` / `unless`, and `for … in` loops
 - User-defined **functions** (return values) and **mixins** (emit declarations/rules),
   with default and rest (`args…`) parameters, in single-line and block forms
@@ -24,16 +25,19 @@ Under active development -- consider this Alpha. The compiler currently supports
   (`length`/`push`/`index`/`last`/`join`/…), string (`unquote`/`quote`/`s`/`substr`/
   `replace`/`split`/`uppercase`/…), and type (`typeof`/`unit`/`match`/`light`/`dark`),
   with CSS named-color support
+- String operators: concatenation (`"a" + b`) and sprintf (`"calc(100% - %s)" % x`)
 - Unknown functions pass through as literal CSS (`translateX(10px)`, `url(...)`)
 - **Interpolation** (`{expr}`) in selectors, property names, strings, and identifiers
 - **`@extend`** (and `@extends`) plus **`$placeholder`** selectors
-- **`@import`**: `.styl` files are inlined (sharing variables/mixins); `.css` and
-  `url(...)` imports pass through verbatim
+- **`@import`** and **`@require`** (import once), with glob paths
+  (`@require 'partials/*'`): `.styl` files are inlined (sharing
+  variables/mixins); `.css` and `url(...)` imports pass through verbatim
 - **At-rules**: `@media` / `@supports` (with selector bubbling and variables in
   queries), `@keyframes`, `@font-face`, and verbatim passthrough for leaf at-rules
   (`@charset`, …)
 - Literal **`url()`** and **`calc()`** (operators/paths preserved; `{interp}` still
-  resolves), **`!important`**, and whitespace-sensitive unary `-`/`+`
+  resolves; `url(base + "x.png")` evaluates variables as in Stylus),
+  **`!important`**, and whitespace-sensitive unary `-`/`+`
   (`margin 10px -5px` is a list; `10px - 5px` subtracts)
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
 - **Source maps** (Source Map v3) mapping selectors and declarations back to the
@@ -462,6 +466,30 @@ go test -v ./difftest           # prints the compatibility score
 ```
 
 (The test skips itself when node or the stylus package is absent.)
+
+### Extensions
+
+go-styl accepts a few things reference Stylus does not. Each is syntax
+Stylus rejects or leaves literal, so it can't change a sheet that works in
+Stylus, with two unlikely exceptions noted below. They are kept on
+purpose: they make common tasks one-liners, and several workarounds in
+this README rely on them.
+
+- **`{expr}` interpolation in more places**: `@media` preludes
+  (`@media (min-width: {bp * 2})`), inside `calc()` and `url()`
+  (`calc(100% - {gutter})`), and as a lone value (`width {x}`, indented
+  syntax only). Stylus fails to parse these.
+- **`{expr}` inside quoted strings** (`content "v{major}"`), substituted
+  only when the braces reference a defined variable. Stylus keeps string
+  text literal, so `"{nope}"`, `"{1 + 2}"` and the escaped `"\{major}"`
+  stay literal in go-styl too; only a string that literally means
+  `{major}` while `major` is a variable differs (escape it as `\{major}`).
+- **Single-line functions** `double(x) = x * 2`. Stylus doesn't read this
+  as a definition and leaves `double(15px)` in the output.
+- **`Options.Globals` / `Options.CustomProperties`** (runtime theming), and
+  the extra-compression `MergeDuplicates` pass.
+
+The difftest pins each one in `difftest/known_diffs.txt`.
 
 ### Deliberate differences
 

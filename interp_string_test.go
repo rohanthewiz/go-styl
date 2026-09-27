@@ -26,3 +26,30 @@ func TestInterpolateStringUnquoted(t *testing.T) {
 		})
 	}
 }
+
+// TestStringInterpolationScope covers which `{…}` groups inside a quoted
+// string are substituted (N-007): only those referencing a defined variable.
+// The literal cases match reference stylus 0.64 byte for byte.
+func TestStringInterpolationScope(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"variable is substituted", `a "x-{p}"`, `.a{a:"x-col"}`},
+		{"expression with a variable", `a "n{n + 1}"`, `.a{a:"n3"}`},
+		{"undefined name stays literal", `a "{nope}"`, `.a{a:"{nope}"}`},
+		{"constant expression stays literal", `a "{1 + 2}"`, `.a{a:"{1 + 2}"}`},
+		{"escaped brace stays literal", `a "\{p}"`, `.a{a:"\{p}"}`},
+		{"unparsable stays literal", `a "{ a: b }"`, `.a{a:"{ a: b }"}`},
+		{"lone brace", `a "{"`, `.a{a:"{"}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			src := "p = col\nn = 2\n.a\n  " + c.src + "\n"
+			if got := compileMin(t, src); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
