@@ -45,13 +45,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   A Stylus LSP (killer feature #4), with `styl fmt` falling out of it. `styl
   fmt` was raised on its own here; `2026-0703-0846-m13-runtime-theming` folded
   it into the LSP.
-- **N-007** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · value low
-  Decide the fate of the go-styl extensions (`{expr}` in `@media`, `calc()`
-  and strings; single-line `f(x) = expr`): gate them or keep them. Note that
-  the natural workaround for N-028 (`calc(100vh - {x})`) relies on one of
-  them. Dropped off the list after
-  `2026-0701-2034-m11-wasm-playground-deploy`. A standalone `{expr}` is also
-  unsupported anywhere in a file that uses braces; `s("…%s…", x)` avoids it.
 - **N-009** · raised `2026-0703-0846-m13-runtime-theming` · value low
   Scoped component styles, `styl.Component` with hashed class names (the
   first half of killer feature #3), feeding the same `GoSource` renderer as
@@ -110,6 +103,15 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-007** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · closed 2026-09-27, `2026-0927-1650-go-styl-extensions-decision`
+  Decision: keep the go-styl extensions ungated. They're listed in a new
+  README "Extensions" section, and each is pinned in `known_diffs.txt`. The
+  strings extension was narrowed: `interpolateString` substitutes a `{…}`
+  group only when it references a defined variable, and `\{` escapes. So
+  `"{nope}"`, `"{1 + 2}"` and `"\{p}"` stay literal, as in Stylus
+  (`TestStringInterpolationScope`). README Status list updated for this
+  session's additions.
 
 - **N-021** · raised `2026-0706-1417-element-playground-live-deploy-verified` · closed 2026-09-27, `2026-0927-1648-go-styl-tutorial-element-link`
   The tutorial's "Where to next" lesson links to element's tutorial
