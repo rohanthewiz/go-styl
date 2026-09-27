@@ -1,0 +1,14 @@
+@require _globals
+
+clearfix()
+  &:after
+    content: "";
+    display: table;
+    clear: both;
+
+button-look(bg = brand, pad = spacer * 2)
+  background-color: bg;
+  padding: pad (pad * 2);
+  border-radius: 2px;
+  &:hover, &:focus
+    background-color: darken(bg, 10%);

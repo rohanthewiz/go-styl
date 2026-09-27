@@ -1,0 +1,56 @@
+// A sheet shaped like a real-world indented-syntax site (cema): @require with
+// a glob, trailing semicolons and several declarations per line, mixin-heavy,
+// multi-line selector groups, trailing parent references, string escapes,
+// the sprintf operator, list indexing and url() variables.
+@require 'imports/site/*'
+
+mid-diff = banner-height + menu-height
+sizes = 12px 14px 18px
+
+body
+  margin: 0; padding: 0;
+  #main
+    clearfix()
+    height: "calc(100vh - %s)" % mid-diff;
+    width: "calc(%s - 8px)" % 70%
+    .page-heading
+      text-align: center
+      .page-title
+        font-size: gap
+        margin: 0.3rem 0;
+
+    ul.list li:before
+      content: "\2022";
+      color: brand
+      padding-right: spacer
+
+    .form-group,
+    .checkbox,
+    .radio
+      margin-bottom: font-size-base * 1.8
+      .form-help
+        color: #999;
+        .checkbox &,
+        .radio &
+          position: absolute; width: 100%
+
+    table.recent
+      td:nth-child(1),
+      td:nth-child(2)
+        a:link,
+        a:visited
+          color: brand
+
+    .btn
+      button-look()
+    .btn-danger
+      button-look(#d9534f, 0.5rem)
+
+  .small
+    font-size: sizes[0]
+  .large
+    font-size: sizes[-1]
+  .icon-search
+    background: url(icon-path + "search.svg") no-repeat;
+  .label
+    content: "Section " + 2;

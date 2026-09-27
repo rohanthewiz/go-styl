@@ -45,12 +45,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   A Stylus LSP (killer feature #4), with `styl fmt` falling out of it. `styl
   fmt` was raised on its own here; `2026-0703-0846-m13-runtime-theming` folded
   it into the LSP.
-- **N-006** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · value medium
-  Grow the difftest corpus (15 files). It missed basic syntax that cema uses:
-  selectors continued across lines with a trailing comma fail even at the top
-  level (N-024). Add a sheet shaped like cema's `styles/styl` (indented
-  syntax, trailing `;`, mixin-heavy). Dropped off the list after
-  `2026-0701-2034-m11-wasm-playground-deploy`.
 - **N-007** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · value low
   Decide the fate of the go-styl extensions (`{expr}` in `@media`, `calc()`
   and strings; single-line `f(x) = expr`): gate them or keep them. Note that
@@ -125,6 +119,16 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-006** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · closed 2026-09-27, `2026-0927-1647-go-styl-cema-shaped-corpus`
+  Difftest corpus grown with `difftest/corpus/cema-shaped.styl` (plus
+  partials in `difftest/corpus/imports/site/`, which aren't compiled
+  directly). It is an indented-syntax site sheet using `@require` with a
+  glob, semicolons, mixins with defaults, multi-line selector groups,
+  trailing `&`, `"\2022"`, the `%` operator, list indexing, `url()`
+  variables and string `+`. It matches stylus 0.64: score 24/35. (The
+  corpus also gained `undefined-mixin.styl` and `bare-pseudo.styl` as
+  pinned deliberate differences this session.)
 
 - **N-038** · raised `2026-0927-1645-go-styl-url-variables` · closed 2026-09-27, `2026-0927-1646-go-styl-interp-strings`
   Interpolating a quoted string now gives its raw text (`evalString` in
