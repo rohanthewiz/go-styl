@@ -11,6 +11,7 @@
 // stylesheet reduced to the rules that page uses (styl.Prune, the engine
 // behind critical-CSS middleware), and `used`: the names found in the HTML
 // as {classes, ids, tags}.
+//
 //	goStyl.examples() -> [{name, source}]
 //	goStyl.version -> module version string
 //
