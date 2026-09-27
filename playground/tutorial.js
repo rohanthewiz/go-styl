@@ -1129,6 +1129,7 @@ radius ?= 4px
 <li><strong>CLI</strong> — <code>go run github.com/rohanthewiz/go-styl/cmd/styl input.styl</code>, with <code>-D</code> globals, <code>-cssvar</code>, <code>-sourcemap</code>, <code>-compress</code>.</li>
 </ul>
 <p>All of it is documented in the <a href="https://github.com/rohanthewiz/go-styl#readme" target="_blank" rel="noopener">README</a>. The bundled examples (the picker in the Playground tab) are runnable feature tours, too.</p>
+<p>Building the HTML in Go too? <a href="https://rohanthewiz.github.io/element/#tutorial" target="_blank" rel="noopener">element's tutorial</a> covers its zero-dependency HTML builder — the natural companion to go-styl's typed class names.</p>
 <div class="tip">Found a divergence from reference Stylus? The repo's <code>difftest/</code> harness scores go-styl against the Node compiler — issues and PRs welcome.</div>`,
   ],
   code: `// a little of everything — tinker away

@@ -82,10 +82,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
   A Go highlighter for `go` blocks in tutorial prose (currently escaped plain
   text).
-- **N-021** · raised `2026-0706-1417-element-playground-live-deploy-verified` · value low
-  Tutorial's "where to next" lesson: link to element's tutorial
-  (https://rohanthewiz.github.io/element/#tutorial), mirroring element's link
-  here.
 
 ## Roadmap
 
@@ -114,6 +110,11 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-021** · raised `2026-0706-1417-element-playground-live-deploy-verified` · closed 2026-09-27, `2026-0927-1648-go-styl-tutorial-element-link`
+  The tutorial's "Where to next" lesson links to element's tutorial
+  (https://rohanthewiz.github.io/element/#tutorial), mirroring element's
+  link to go-styl.
 
 - **N-020** · raised `2026-0706-1417-element-playground-live-deploy-verified` · closed 2026-09-27, `2026-0927-1648-go-styl-playground-boot-tab`
   Playground boot calls `switchTab` unconditionally
