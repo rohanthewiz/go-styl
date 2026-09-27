@@ -624,6 +624,23 @@ func (ev *evaluator) evalBinary(b *ast.Binary, scope *Scope) (value.Value, error
 	// wrappers resolve to their compile-time value here.
 	l, r = value.Deref(l), value.Deref(r)
 
+	// Stylus's sprintf operator: `"calc(100vh - %s)" % x` is s(fmt, x), and a
+	// list on the right spreads into one argument per item, so
+	// `"%s and %s" % (1px 2px)` fills both placeholders. `%` binds like `*`,
+	// so `"%s" % 1px 3px` formats only 1px, as in Stylus.
+	if b.Op == token.PERCENT {
+		if _, isStr := l.(*value.Str); isStr {
+			args := []value.Value{l}
+			if list, isList := r.(*value.List); isList {
+				args = append(args, list.Items...)
+			} else {
+				args = append(args, r)
+			}
+			sprintf, _ := builtin.Lookup("s")
+			return sprintf(args)
+		}
+	}
+
 	switch b.Op {
 	case token.PLUS, token.MINUS, token.STAR, token.POW, token.SLASH, token.PERCENT:
 		ln, lok := l.(*value.Number)

@@ -41,8 +41,12 @@ func quote(args []value.Value) (value.Value, error) {
 	return &value.Str{Val: strVal(args[0]), Quote: '"'}, nil
 }
 
-// sprintf implements Stylus's s(): %s placeholders are filled from the remaining
-// arguments in order.
+// sprintf implements Stylus's s() (and the string `%` operator, which calls
+// it): placeholders are filled from the remaining arguments in order. %s
+// takes an argument's CSS form, strings keeping their quotes; %d takes a
+// number's bare value, unit dropped (`%d` of 3px is 3). A placeholder with no
+// argument left becomes empty (Stylus fills it with null). `%%` is not an
+// escape in Stylus and stays as is.
 func sprintf(args []value.Value) (value.Value, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("s() expects at least 1 argument")
@@ -52,10 +56,18 @@ func sprintf(args []value.Value) (value.Value, error) {
 	var b strings.Builder
 	ai := 0
 	for i := 0; i < len(format); i++ {
-		if format[i] == '%' && i+1 < len(format) && format[i+1] == 's' {
+		if format[i] == '%' && i+1 < len(format) && (format[i+1] == 's' || format[i+1] == 'd') {
 			if ai < len(rest) {
-				b.WriteString(rest[ai].CSS(true))
+				arg := rest[ai]
 				ai++
+				if format[i+1] == 'd' {
+					n, ok := arg.(*value.Number)
+					if !ok {
+						return nil, fmt.Errorf("%%d requires a unit, got %s", arg.TypeName())
+					}
+					arg = &value.Number{Num: n.Num}
+				}
+				b.WriteString(arg.CSS(true))
 			}
 			i++
 			continue

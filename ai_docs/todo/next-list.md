@@ -109,15 +109,12 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
   zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). Blocked by N-028…N-030
-  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors, N-025 trailing `&`, N-026 string escapes and N-027 semicolons are closed). With every gap patched around in a
+  dependency (cema branch `roh/use-go-styl`). Blocked by N-029 and N-030
+  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors, N-025 trailing `&`, N-026 string escapes, N-027 semicolons and N-028 sprintf are closed). With every gap patched around in a
   scratch copy, the remaining diffs were all go-styl bugs listed here, plus
   cema-side source quirks that
   cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
   `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
-- **N-028** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
-  Stylus's sprintf operator: `"calc(100vh - %s)" % x` → `cannot apply "%" to
-  string and unit`. cema uses it 5 times.
 - **N-029** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value low
   Number formatting: `mf-font-size * 1.8` prints `1.7999999999999998rem`
   where Stylus prints `1.8rem`. Renders the same.
@@ -162,6 +159,14 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-028** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1628-go-styl-sprintf-operator`
+  Stylus's sprintf operator. `evalBinary` sends a string `%` to the `s()`
+  builtin, spreading a list on the right into one argument per item.
+  `s()` gained `%d` (a number's bare value). Tests in `sprintf_test.go` match
+  stylus 0.64. Two small differences remain: `type()` of the result is
+  `string` (Stylus: `literal`), and a placeholder with no argument leaves
+  its surrounding space.
 
 - **N-027** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1625-go-styl-semicolons`
   Semicolons in the indentation syntax. `expandSemicolons`
