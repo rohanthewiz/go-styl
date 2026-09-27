@@ -62,9 +62,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-014** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · value low
   Playground pane that prunes the compiled CSS against pasted HTML (M15
   exposure).
-- **N-015** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · value low
-  net/http critical-CSS adapter: a `stylhttp` twin of rweb's
-  `middleware/critical`, on top of `stylcrit`.
 
 ## Roadmap
 
@@ -93,6 +90,15 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-015** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · closed 2026-09-27, `2026-0927-1702-go-styl-nethttp-critical`
+  `stylhttp.Critical(stylcrit.Options) func(http.Handler) http.Handler`, the
+  net/http twin of rweb's `middleware/critical`. A buffering writer decides
+  at WriteHeader: non-2xx, non-HTML or Content-Encoding responses pass
+  through unbuffered (Flush forwarded, so streams keep streaming). HTML is
+  buffered, type-sniffed if unset, inlined via `stylcrit.Engine.Inline`, and
+  loses its stale Content-Length and ETag. Compile errors give a positioned
+  500. Tests in `stylhttp/critical_test.go`.
 
 - **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · closed 2026-09-27, `2026-0927-1700-go-styl-tutorial-go-highlighting`
   Go snippets in tutorial prose are highlighted. `stylHi.go(src)`

@@ -298,8 +298,19 @@ page, err := crit.Inline(renderPage()) // <style> injected before </head>
 ```
 
 Output is cached by the page's used-name set (pages sharing a layout compile
-once) and invalidated when the stylesheet or any `@import` changes. The rweb
-middleware (`rweb/middleware/critical`) applies it to every HTML response.
+once) and invalidated when the stylesheet or any `@import` changes. Two
+middleware adapters apply it to every HTML response: `stylhttp.Critical` for
+`net/http`, and rweb's `middleware/critical`.
+
+```go
+handler := stylhttp.Critical(stylcrit.Options{Path: "styles/app.styl"})(mux)
+http.ListenAndServe(":8080", handler)
+```
+
+`stylhttp.Critical` rewrites only 2xx, uncompressed `text/html` responses
+(sniffing the type when the handler sets none); anything else, such as JSON,
+event streams or gzip, passes through unbuffered. A rewritten page drops its
+`Content-Length` and `ETag`.
 
 ## Serving over HTTP
 
