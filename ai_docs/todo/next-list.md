@@ -109,17 +109,12 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
   zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). Blocked by N-030
-  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors, N-025 trailing `&`, N-026 string escapes, N-027 semicolons, N-028 sprintf and N-029 number formatting are closed). With every gap patched around in a
+  dependency (cema branch `roh/use-go-styl`). All go-styl-side blockers
+  (N-002, N-023…N-030) are closed. With every gap patched around in a
   scratch copy, the remaining diffs were all go-styl bugs listed here, plus
   cema-side source quirks that
   cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
   `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
-- **N-030** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value low
-  A statement-level call to an undefined mixin (`sermon()`, a bodiless
-  `payment_form()`) is an error in go-styl but silently dropped by Stylus.
-  The error found three dead lines in cema, so keeping it seems right; record
-  it as a deliberate divergence in `difftest/known_diffs.txt` and the README.
 - **N-035** · raised `2026-0927-1357-go-styl-multiline-selectors` · value low
   A nested selector that starts with a pseudo-class joins its parent without
   a space: `.x` over `:hover` gives `.x:hover`, while Stylus gives
@@ -156,6 +151,12 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-030** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1631-go-styl-undefined-mixin-doc`
+  Undefined mixin calls stay an error, now documented as deliberate: a
+  README "Deliberate differences" subsection (with the other lenient
+  choices from N-026…N-029), and `difftest/corpus/undefined-mixin.styl`
+  pinned in `known_diffs.txt`.
 
 - **N-029** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1630-go-styl-number-formatting`
   Number formatting. `formatNum` (`internal/value/value.go`) rounds to 15

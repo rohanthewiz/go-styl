@@ -1,0 +1,7 @@
+// A statement-level call to a mixin that is never defined. Reference stylus
+// drops the call silently; go-styl reports it (with a did-you-mean hint when
+// a close name exists). Deliberate: in cema this error found three dead
+// calls that stylus had hidden for years.
+.card
+  sermon()
+  color red

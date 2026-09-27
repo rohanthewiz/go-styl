@@ -461,6 +461,27 @@ go test -v ./difftest           # prints the compatibility score
 
 (The test skips itself when node or the stylus package is absent.)
 
+### Deliberate differences
+
+Where reference Stylus is silent about a likely mistake, or fails on valid
+CSS, go-styl chooses differently on purpose:
+
+- **Calling an undefined mixin is an error.** Stylus silently drops a
+  statement-level `sermon()` or `+sermon` when no such mixin exists; go-styl
+  reports `undefined mixin "sermon"` (with a did-you-mean hint when a close
+  name exists). This catches typos and dead calls; delete the call or define
+  the mixin.
+- **Backslash-escaped quotes stay inside a string** (`'it\'s'`); Stylus
+  fails to parse them.
+- **A `;` inside `url(...)` is kept** in the indentation syntax
+  (`url(data:image/png;base64,…)`); Stylus fails to parse an unquoted data
+  URI.
+- **`@extend .x;`** accepts a trailing `;`; Stylus reads it as part of the
+  selector and fails to extend.
+- **Numbers are always rounded to 15 decimals** when printed. Stylus skips
+  this for compressed values between -1 and 1 and prints
+  `.30000000000000004`.
+
 ## Architecture
 
 ```
