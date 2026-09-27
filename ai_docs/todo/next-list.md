@@ -97,11 +97,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   Tutorial's "where to next" lesson: link to element's tutorial
   (https://rohanthewiz.github.io/element/#tutorial), mirroring element's link
   here.
-- **N-038** · raised `2026-0927-1645-go-styl-url-variables` · value medium
-  Interpolating a quoted string keeps its quotes: with `s = "x"`, `.a-{s}`
-  gives `.a-"x"` where Stylus gives `.a-x`, and `url({base}x.png)` gives
-  `url("/img/"x.png)`. `evalString` (`internal/eval/m4.go`) uses the
-  value's CSS form; Stylus uses a string's raw value.
 
 ## Roadmap
 
@@ -130,6 +125,14 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-038** · raised `2026-0927-1645-go-styl-url-variables` · closed 2026-09-27, `2026-0927-1646-go-styl-interp-strings`
+  Interpolating a quoted string now gives its raw text (`evalString` in
+  `internal/eval/m4.go`), as in Stylus: `.a-{s}` → `.a-x`, and
+  `url({base}x.png)` → `url(/img/x.png)`. Units and whole lists are still
+  kept (Stylus drops units and uses only a list's first item), because
+  go-styl's `@media` and `calc()` interpolation needs them. Tests in
+  `interp_string_test.go`.
 
 - **N-001** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-27, `2026-0927-1645-go-styl-url-variables`
   Variables inside `url()`. `evalURL` (`internal/eval/eval.go`) evaluates a
