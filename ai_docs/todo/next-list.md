@@ -53,10 +53,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   `styl migrate`: Stylus → modern CSS migration tool (killer feature #5).
 - **N-011** · raised `2026-0703-0846-m13-runtime-theming` · value low
   Safe multi-tenant theme compilation / sandbox (killer feature #6).
-- **N-012** · raised `2026-0703-0846-m13-runtime-theming` · value low
-  Per-request globals in stylserve, with a cache keyed by the variable set.
-  `stylserve.Options.Globals` is still fixed per engine. Dropped off the list
-  after `2026-0703-0959-playground-globals-exposure`.
 - **N-013** · raised `2026-0703-0959-playground-globals-exposure` · value low
   Dev-mode live reload for stylserve (killer features, honorable mention).
 
@@ -87,6 +83,15 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-012** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27, `2026-0927-1706-go-styl-per-request-globals`
+  Per-request globals. `stylserve.Engine.AssetWith(path, globals)` layers
+  extra globals over `Options.Globals` and caches each variant by path plus
+  a type-aware, order-independent fingerprint. Variants are capped by
+  `Options.MaxVariants` (default 256; base builds are never evicted) and
+  invalidated by source changes. `stylhttp.NewWithGlobals(opts,
+  func(*http.Request) map[string]any, vary...)` sends Vary, or
+  `Cache-Control: private` when no vary list is given.
 
 - **N-014** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · closed 2026-09-27, `2026-0927-1704-go-styl-playground-prune-pane`
   Playground "prune to HTML (critical CSS)" box under the CSS output. With

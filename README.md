@@ -357,6 +357,22 @@ s.Get("/css/*path", stylus.Handler(stylserve.Options{FS: sub}))
 `CustomProperties` for [runtime theming](#runtime-theming). Compile errors
 return `500` with the positioned message; unknown paths return `404`.
 
+Per-request themes (a tenant's brand color, a user's preference) layer extra
+globals over `Options.Globals`. Each distinct variable set compiles once and
+is cached, up to `MaxVariants` sets (default 256):
+
+```go
+mux.Handle("/css/", http.StripPrefix("/css/", stylhttp.NewWithGlobals(
+    stylserve.Options{Dir: "./styles"},
+    func(r *http.Request) map[string]any {
+        return map[string]any{"brand": tenantFor(r.Host).Brand}
+    },
+    "Host", // sent as Vary; with no vary list responses are Cache-Control: private
+)))
+```
+
+Other frameworks call `stylserve.Engine.AssetWith(path, globals)` directly.
+
 ## CLI
 
 ```shell

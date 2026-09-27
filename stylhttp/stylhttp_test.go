@@ -131,3 +131,46 @@ func TestSourceMapServed(t *testing.T) {
 		t.Errorf("map body = %q", b)
 	}
 }
+
+func TestNewWithGlobals(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.styl"), []byte("brand ?= #333\n.btn\n  color brand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	brands := map[string]string{"a.example": "#f00", "b.example": "#00f"}
+	h := NewWithGlobals(stylserve.Options{Dir: dir}, func(r *http.Request) map[string]any {
+		if b, ok := brands[r.Host]; ok {
+			return map[string]any{"brand": b}
+		}
+		return nil
+	}, "Host")
+
+	serve := func(host string) *http.Response {
+		req := httptest.NewRequest(http.MethodGet, "/app.css", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Result()
+	}
+	a, b, other := serve("a.example"), serve("b.example"), serve("c.example")
+	if got := body(t, a); !strings.Contains(got, "#f00") && !strings.Contains(got, "red") {
+		t.Errorf("tenant a = %q", got)
+	}
+	if got := body(t, b); !strings.Contains(got, "#00f") && !strings.Contains(got, "blue") {
+		t.Errorf("tenant b = %q", got)
+	}
+	if got := body(t, other); !strings.Contains(got, "#333") {
+		t.Errorf("default tenant = %q", got)
+	}
+	if v := a.Header.Get("Vary"); v != "Host" {
+		t.Errorf("Vary = %q, want Host", v)
+	}
+
+	// Without a vary list, responses are private to the client.
+	hp := NewWithGlobals(stylserve.Options{Dir: dir}, func(*http.Request) map[string]any { return nil })
+	rec := httptest.NewRecorder()
+	hp.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app.css", nil))
+	if cc := rec.Result().Header.Get("Cache-Control"); cc != "private" {
+		t.Errorf("Cache-Control = %q, want private", cc)
+	}
+}

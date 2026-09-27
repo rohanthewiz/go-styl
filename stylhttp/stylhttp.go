@@ -16,6 +16,9 @@
 //
 // With Options.SourceMaps set, "<name>.css.map" is served alongside and the
 // CSS gains a sourceMappingURL comment.
+//
+// NewWithGlobals varies the CSS per request (a tenant's brand color, a
+// user's theme), compiling and caching each distinct variable set once.
 package stylhttp
 
 import (
@@ -34,8 +37,29 @@ func New(opts stylserve.Options) http.Handler {
 	return &handler{eng: stylserve.New(opts)}
 }
 
+// NewWithGlobals is New with per-request globals: globals(r) returns
+// variables layered over opts.Globals for that request (nil or empty for
+// none). Each distinct set is compiled once and cached, up to
+// opts.MaxVariants sets:
+//
+//	h := stylhttp.NewWithGlobals(stylserve.Options{Dir: "./styles"},
+//		func(r *http.Request) map[string]any {
+//			t := tenantFor(r) // e.g. from the Host header
+//			return map[string]any{"brand": t.Brand, "radius": t.Radius}
+//		})
+//
+// The response depends on whatever globals reads, so vary is sent as the
+// Vary header when non-empty (e.g. "Host", "Cookie"); with no vary list the
+// response is marked Cache-Control: private, so shared caches don't serve
+// one tenant's CSS to another.
+func NewWithGlobals(opts stylserve.Options, globals func(r *http.Request) map[string]any, vary ...string) http.Handler {
+	return &handler{eng: stylserve.New(opts), globals: globals, vary: vary}
+}
+
 type handler struct {
-	eng *stylserve.Engine
+	eng     *stylserve.Engine
+	globals func(r *http.Request) map[string]any // nil for New
+	vary    []string
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +69,18 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	asset, err := h.eng.Asset(r.URL.Path)
+	var vars map[string]any
+	if h.globals != nil {
+		vars = h.globals(r)
+		if len(h.vary) > 0 {
+			for _, v := range h.vary {
+				w.Header().Add("Vary", v)
+			}
+		} else {
+			w.Header().Set("Cache-Control", "private")
+		}
+	}
+	asset, err := h.eng.AssetWith(r.URL.Path, vars)
 	if errors.Is(err, fs.ErrNotExist) {
 		http.NotFound(w, r)
 		return
