@@ -29,7 +29,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-037
+**Next ID:** N-038
 
 ## Open
 
@@ -109,16 +109,12 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
   zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). Blocked by N-027…N-030
-  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors, N-025 trailing `&` and N-026 string escapes are closed). With every gap patched around in a
+  dependency (cema branch `roh/use-go-styl`). Blocked by N-028…N-030
+  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors, N-025 trailing `&`, N-026 string escapes and N-027 semicolons are closed). With every gap patched around in a
   scratch copy, the remaining diffs were all go-styl bugs listed here, plus
   cema-side source quirks that
   cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
   `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
-- **N-027** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
-  Semicolons in indentation syntax: a trailing `;` (`margin: 0 auto;`) and
-  several declarations on one line (`color:black; background: #72962d`) are
-  parse errors. cema has 337 such lines across 15 files.
 - **N-028** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Stylus's sprintf operator: `"calc(100vh - %s)" % x` → `cannot apply "%" to
   string and unit`. cema uses it 5 times.
@@ -139,6 +135,12 @@ session's attempt to compile cema's stylesheets with go-styl.
   1 in go-styl, which treats the string as a one-item list. `"x" + "y"` (and
   `"x" + y`) joins into `'xy'` in Stylus but is `cannot apply "+" to string
   and string` in go-styl. Found while probing N-026.
+- **N-037** · raised `2026-0927-1625-go-styl-semicolons` · value low
+  A `;` inside parentheses in brace syntax ends the statement:
+  `.a { background: url(data:image/png;base64,AAA=) }` → `unexpected ","`.
+  `scanStructural` doesn't track paren depth. The indentation syntax keeps
+  the URI intact. Stylus fails on an unquoted data URI in both syntaxes, so
+  this only matters beyond Stylus compatibility. Found while probing N-027.
 
 ## Roadmap
 
@@ -160,6 +162,16 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-027** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1625-go-styl-semicolons`
+  Semicolons in the indentation syntax. `expandSemicolons`
+  (`internal/parser/semis.go`) runs at the top of `parseBlock` and splits
+  each line on top-level `;` (not inside strings, parens, brackets or
+  interpolation) into sibling lines. Empty pieces are dropped, and the
+  line's indented body goes to the last piece, as in Stylus. Each piece gets
+  its own error column. Running after comma continuation means a multi-line
+  value's closing `;` is handled too. Tests in `semicolon_test.go` match
+  stylus 0.64. cema's 28 `;`-bearing sheets no longer fail on semicolons.
 
 - **N-002** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-27, `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat`
   Mixed indentation + brace syntax in one file. `bracesToIndent` now takes a

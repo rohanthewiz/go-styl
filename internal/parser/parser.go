@@ -129,6 +129,9 @@ func onlyEOF(toks []token.Token) bool {
 // parseBlock parses a list of sibling lines into statements, grouping
 // if/else-if/else chains into single If statements.
 func parseBlock(lines []*line) ([]ast.Stmt, error) {
+	// Semicolons split first, so a selector run or an if/else chain sees
+	// each statement as its own line.
+	lines = expandSemicolons(lines)
 	lines = groupSelectorLines(lines)
 	var stmts []ast.Stmt
 	for i := 0; i < len(lines); i++ {
