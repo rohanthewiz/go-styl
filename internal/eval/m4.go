@@ -123,19 +123,53 @@ func (ev *evaluator) evalExtend(s *ast.Extend, ctx *execCtx) error {
 	return nil
 }
 
-// evalImport handles `@import`. A literal import is emitted verbatim; otherwise
-// the referenced .styl file is resolved, parsed, and executed inline in the
-// current scope (so its variables and mixins are shared).
+// evalImport handles `@import` and `@require`. A literal import is emitted
+// verbatim; otherwise the referenced .styl file(s) are resolved, parsed, and
+// executed inline in the current scope (so their variables and mixins are
+// shared). A glob path expands to every matching file, imported in sorted
+// order.
+//
+// @require (s.Once) follows Stylus: each resolved file is imported at most
+// once per compile, and the check is made per file, so `@require '_styl/*'`
+// after `@require '_styl/_vars'` skips just _vars. Only @require consults and
+// records the set; a plain @import always re-imports, matching Stylus's
+// requireHistory.
 func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 	if s.Literal {
+		// Literal requires are deduped by their raw path text. The NUL prefix
+		// keeps these keys apart from resolved file paths in the same set.
+		if s.Once {
+			key := "\x00literal:" + s.Path
+			if ev.required[key] {
+				return nil
+			}
+			ev.required[key] = true
+		}
 		*ctx.sink = append(*ctx.sink, &css.RawNode{Text: importStmt(s.Path)})
 		return nil
 	}
 
-	abs, err := resolveImport(ev.opts.FS, ctx.dir, s.Path, ev.opts.IncludePaths)
+	files, err := resolveImport(ev.opts.FS, ctx.dir, s.Path, ev.opts.IncludePaths)
 	if err != nil {
 		return err
 	}
+	for _, abs := range files {
+		if s.Once {
+			if ev.required[abs] {
+				continue
+			}
+			ev.required[abs] = true
+		}
+		if err := ev.importFile(s.Path, abs, ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// importFile parses one resolved import (abs) and executes it inline in ctx's
+// scope. imp is the path as written, for error messages.
+func (ev *evaluator) importFile(imp, abs string, ctx *execCtx) error {
 	if ev.importing[abs] {
 		return fmt.Errorf("import cycle detected at %q", abs)
 	}
@@ -143,7 +177,7 @@ func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 
 	data, err := ev.readFile(abs)
 	if err != nil {
-		return fmt.Errorf("@import %q: %w", s.Path, err)
+		return fmt.Errorf("@import %q: %w", imp, err)
 	}
 	sheet, err := parser.Parse(string(data))
 	if err != nil {
@@ -185,12 +219,30 @@ func dirOf(fsys fs.FS, p string) string {
 	return filepath.Dir(p)
 }
 
-// resolveImport locates a .styl import. It searches dir first, then each
-// include path, trying the path as given and with a ".styl" extension (and an
-// index.styl inside a matching directory). With a non-nil fsys, resolution uses
-// slash-separated fs.FS paths (a leading '/' is treated as the FS root);
-// otherwise the OS filesystem, returning an absolute path.
-func resolveImport(fsys fs.FS, dir, imp string, includePaths []string) (string, error) {
+// isGlob reports whether an import path contains glob metacharacters.
+func isGlob(imp string) bool {
+	return strings.ContainsAny(imp, "*?[")
+}
+
+// globPattern appends ".styl" to a glob that doesn't already name that
+// extension, as Stylus does, so `_styl/*` matches only the .styl partials in
+// the directory and skips any .css or other files beside them.
+func globPattern(imp string) string {
+	if strings.HasSuffix(strings.ToLower(imp), ".styl") {
+		return imp
+	}
+	return imp + ".styl"
+}
+
+// resolveImport locates the file(s) for a .styl import. It searches dir first,
+// then each include path. A plain path resolves to one file: the path as
+// given, with a ".styl" extension, or index.styl inside a matching directory.
+// A glob path (`_styl/*`) resolves to every matching .styl file in the first
+// base that has any match, in sorted order. Go's glob syntax applies, so `**`
+// behaves like `*` (no recursive descent). With a non-nil fsys, resolution
+// uses slash-separated fs.FS paths (a leading '/' is treated as the FS root);
+// otherwise the OS filesystem, returning absolute paths.
+func resolveImport(fsys fs.FS, dir, imp string, includePaths []string) ([]string, error) {
 	if fsys != nil {
 		return resolveImportFS(fsys, dir, imp, includePaths)
 	}
@@ -208,21 +260,46 @@ func resolveImport(fsys fs.FS, dir, imp string, includePaths []string) (string, 
 		if base != "" {
 			cand = filepath.Join(base, imp)
 		}
+
+		if isGlob(imp) {
+			// filepath.Glob returns matches in lexical order, so imports run
+			// in a stable, name-sorted order (_a before _b), as in Stylus.
+			matches, err := filepath.Glob(globPattern(cand))
+			if err != nil {
+				return nil, fmt.Errorf("@import %q: %w", imp, err)
+			}
+			var files []string
+			for _, m := range matches {
+				if info, err := os.Stat(m); err != nil || info.IsDir() {
+					continue
+				}
+				abs, err := filepath.Abs(m)
+				if err != nil {
+					return nil, err
+				}
+				files = append(files, abs)
+			}
+			if len(files) > 0 {
+				return files, nil
+			}
+			continue
+		}
+
 		for _, p := range []string{cand, cand + ".styl", filepath.Join(cand, "index.styl")} {
 			if info, err := os.Stat(p); err == nil && !info.IsDir() {
 				abs, err := filepath.Abs(p)
 				if err != nil {
-					return "", err
+					return nil, err
 				}
-				return abs, nil
+				return []string{abs}, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("@import %q: file not found", imp)
+	return nil, fmt.Errorf("@import %q: file not found", imp)
 }
 
 // resolveImportFS is resolveImport over an fs.FS.
-func resolveImportFS(fsys fs.FS, dir, imp string, includePaths []string) (string, error) {
+func resolveImportFS(fsys fs.FS, dir, imp string, includePaths []string) ([]string, error) {
 	var bases []string
 	if strings.HasPrefix(imp, "/") {
 		imp = strings.TrimPrefix(imp, "/")
@@ -237,14 +314,33 @@ func resolveImportFS(fsys fs.FS, dir, imp string, includePaths []string) (string
 
 	for _, base := range bases {
 		cand := path.Join(base, imp)
+
+		if isGlob(imp) {
+			// fs.Glob, like filepath.Glob, yields lexically sorted matches.
+			matches, err := fs.Glob(fsys, globPattern(cand))
+			if err != nil {
+				return nil, fmt.Errorf("@import %q: %w", imp, err)
+			}
+			var files []string
+			for _, m := range matches {
+				if info, err := fs.Stat(fsys, m); err == nil && !info.IsDir() {
+					files = append(files, m)
+				}
+			}
+			if len(files) > 0 {
+				return files, nil
+			}
+			continue
+		}
+
 		for _, p := range []string{cand, cand + ".styl", path.Join(cand, "index.styl")} {
 			if !fs.ValidPath(p) {
 				continue
 			}
 			if info, err := fs.Stat(fsys, p); err == nil && !info.IsDir() {
-				return p, nil
+				return []string{p}, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("@import %q: file not found", imp)
+	return nil, fmt.Errorf("@import %q: file not found", imp)
 }

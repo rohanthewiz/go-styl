@@ -116,9 +116,12 @@ type Extend struct {
 // Import brings in another stylesheet. When Literal is true the import is left as
 // a verbatim `@import` in the output (CSS imports, url(), absolute URLs);
 // otherwise the referenced .styl file is parsed and inlined, sharing scope.
+// Once marks `@require`: a file already required anywhere in the compile is
+// skipped. Path may be a glob (`_styl/*`) that expands to several files.
 type Import struct {
 	Path      string // the import argument with quotes stripped
 	Literal   bool   // true => passthrough @import; false => inline a .styl file
+	Once      bool   // true for @require (import once per compile)
 	Line, Col int    // 1-based source position
 }
 

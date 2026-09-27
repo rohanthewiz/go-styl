@@ -178,9 +178,12 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		return &ast.Extend{Target: target, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
-	// @import <string | url(...)>
-	if wordPrefix(text, "@import") {
-		return parseImport(strings.TrimSpace(text[len("@import"):]), ln.lineNo, ln.indent+1)
+	// @import / @require <string | url(...)>. @require shares @import's
+	// syntax; the only difference (import once) is applied by the evaluator.
+	for _, kw := range []string{"@import", "@require"} {
+		if wordPrefix(text, kw) {
+			return parseImport(kw, strings.TrimSpace(text[len(kw):]), ln.lineNo, ln.indent+1)
+		}
 	}
 
 	// Any other leaf at-rule (@charset, @namespace, …) passes through verbatim.
@@ -328,16 +331,18 @@ func parseAtRule(ln *line) (ast.Stmt, error) {
 	return at, nil
 }
 
-// parseImport parses the argument of an `@import` line. The argument is a quoted
+// parseImport parses the argument of an `@import` or `@require` line (kw names
+// which, for error messages and the Once flag). The argument is a quoted
 // path or a url(...). A `.css` path, an absolute URL, or a url(...) becomes a
 // literal passthrough import; any other path is inlined from a .styl file.
-func parseImport(rest string, lineNo, col int) (ast.Stmt, error) {
+func parseImport(kw, rest string, lineNo, col int) (ast.Stmt, error) {
+	once := kw == "@require"
 	rest = strings.TrimSpace(strings.TrimSuffix(rest, ";"))
 	if rest == "" {
-		return nil, diag.Errorf(lineNo, col, "@import requires a path")
+		return nil, diag.Errorf(lineNo, col, "%s requires a path", kw)
 	}
 	if strings.HasPrefix(strings.ToLower(rest), "url(") {
-		return &ast.Import{Path: rest, Literal: true, Line: lineNo, Col: col}, nil
+		return &ast.Import{Path: rest, Literal: true, Once: once, Line: lineNo, Col: col}, nil
 	}
 
 	path := rest
@@ -348,7 +353,7 @@ func parseImport(rest string, lineNo, col int) (ast.Stmt, error) {
 	literal := strings.HasSuffix(low, ".css") ||
 		strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") ||
 		strings.HasPrefix(path, "//")
-	return &ast.Import{Path: path, Literal: literal, Line: lineNo, Col: col}, nil
+	return &ast.Import{Path: path, Literal: literal, Once: once, Line: lineNo, Col: col}, nil
 }
 
 // splitSelectors splits a selector line on top-level commas, ignoring commas

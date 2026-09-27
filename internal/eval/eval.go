@@ -63,6 +63,7 @@ type evaluator struct {
 	placeholders map[string]*css.Rule // $name -> placeholder rule
 	extends      []extendReq
 	importing    map[string]bool // absolute paths currently being imported (cycle guard)
+	required     map[string]bool // paths already pulled in by @require (import-once set)
 	depth        int             // current function/mixin call depth
 	deps         []string        // resolved paths of every inlined @import, in order
 	customProps  map[string]bool // variable names exposed as CSS custom properties
@@ -129,6 +130,7 @@ func evalNodes(sheet *ast.Stylesheet, opts Options) (*evaluator, []css.Node, err
 		opts:         opts,
 		placeholders: map[string]*css.Rule{},
 		importing:    map[string]bool{},
+		required:     map[string]bool{},
 		customProps:  map[string]bool{},
 	}
 	for _, name := range opts.CustomProperties {

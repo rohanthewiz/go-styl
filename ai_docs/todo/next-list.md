@@ -109,18 +109,12 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
   zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). Blocked by N-023…N-030
+  dependency (cema branch `roh/use-go-styl`). Blocked by N-024…N-030
   (N-002, mixed syntax, is closed). With every gap patched around in a
   scratch copy, the remaining diffs were all go-styl bugs listed here, plus
   cema-side source quirks that
   cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
   `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
-- **N-023** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
-  `@require` (import once) and glob paths (`@require '_styl/*'`). `@require`
-  currently passes through as a verbatim leaf at-rule. cema uses it 44 times.
-  Globbing belongs in `resolveImport`/`resolveImportFS`
-  (`internal/eval/m4.go`); import-once needs a seen-set on the evaluator next
-  to `importing`.
 - **N-024** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Multi-line selector groups. (a) A trailing-comma continuation (`.a,` then
   `.b` on the next line) is a parse error, even at the top level. (b) Stacked
@@ -177,6 +171,16 @@ are recorded in the session docs.
   Tests in `mixed_syntax_test.go`, expected values checked against stylus 0.64.
   Difftest unchanged at 23/32. cema's flattened sheets compile with
   `_material_form.styl`'s braces intact, identical to the hand-stripped run.
+
+- **N-023** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, session doc pending
+  `@require` and glob import paths. The parser reads `@require` as an
+  `ast.Import` with `Once` set. `resolveImport`/`resolveImportFS` expand a glob
+  (`.styl` appended, as in Stylus) into its matches in sorted order, taken from
+  the first base that has any. The evaluator skips each resolved file already
+  in its `required` set. Only `@require` reads and writes that set, as in
+  Stylus's requireHistory. Tests in `require_test.go` match stylus 0.64. The one
+  known difference: a literal `.css` require passes through, while Stylus
+  fails if the `.css` file doesn't exist.
 
 - **N-032** · raised `2026-0624-1757-go-styl-m4-m5` · closed 2026-09-27, `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat`
   Unquoted `url(/path.ext)` tripping the value lexer. Verified fixed:
