@@ -172,7 +172,7 @@ are recorded in the session docs.
   Difftest unchanged at 23/32. cema's flattened sheets compile with
   `_material_form.styl`'s braces intact, identical to the hand-stripped run.
 
-- **N-023** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, session doc pending
+- **N-023** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1348-go-styl-require-and-glob-imports`
   `@require` and glob import paths. The parser reads `@require` as an
   `ast.Import` with `Once` set. `resolveImport`/`resolveImportFS` expand a glob
   (`.styl` appended, as in Stylus) into its matches in sorted order, taken from
