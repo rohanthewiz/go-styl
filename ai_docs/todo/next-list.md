@@ -65,9 +65,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-015** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · value low
   net/http critical-CSS adapter: a `stylhttp` twin of rweb's
   `middleware/critical`, on top of `stylcrit`.
-- **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
-  A Go highlighter for `go` blocks in tutorial prose (currently escaped plain
-  text).
 
 ## Roadmap
 
@@ -96,6 +93,13 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · closed 2026-09-27, `2026-0927-1700-go-styl-tutorial-go-highlighting`
+  Go snippets in tutorial prose are highlighted. `stylHi.go(src)`
+  (`playground/highlight.js`) is a single-pass tokenizer (comments, the three
+  string kinds including multi-line raw strings, numbers, keywords,
+  predeclared types/consts, calls, exported selectors) reusing the existing
+  token classes. Text round-trips losslessly. Browser-verified.
 
 - **N-039** · raised `2026-0927-1658-go-styl-playground-error-marks` · closed 2026-09-27, `2026-0927-1659-go-styl-eof-error-message`
   An expression that ends early now reports `unexpected end of expression`

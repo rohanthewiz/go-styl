@@ -1212,6 +1212,7 @@ function init(opts) {
     const lang = seg.lang || 'styl';
     const body = lang === 'styl' ? stylHi.styl(seg.code)
                : lang === 'css' ? stylHi.css(seg.code)
+               : lang === 'go' ? stylHi.go(seg.code)
                : stylHi.escape(seg.code);
     return '<pre class="snip lang-' + lang + '"><code>' + body + '</code></pre>';
   }

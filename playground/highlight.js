@@ -7,6 +7,7 @@
 //   stylHi.editor(ta, code)   -> wires a <textarea> to its overlay <code>;
 //                                returns a repaint function
 //   stylHi.errorMark(ta)      -> marks a compile error's line in that editor
+//   stylHi.go(src)            -> HTML for a Go snippet (tutorial prose)
 //
 // The Stylus tokenizer is a per-line scanner with one piece of context: a line
 // whose next non-blank line is indented deeper (or that ends in `{` or `,`)
@@ -215,6 +216,59 @@ function editor(ta, code, enabled) {
   return () => { paint(); sync(); };
 }
 
+// --- Go highlighter ------------------------------------------------------------
+// go(src) highlights Go snippets in tutorial prose. A single left-to-right
+// scan (not per line, since raw `strings` can span lines), reusing the
+// token classes of the Stylus/CSS highlighters:
+//
+//   t-com  // and /* */ comments (including //go:embed directives)
+//   t-str  "…", '…' and `…` literals
+//   t-num  numbers, true/false/nil/iota
+//   t-kw   keywords
+//   t-cls  predeclared types, and exported names after a dot (styl.Options)
+//   t-fn   an identifier directly followed by "(" (a call or declaration)
+//   t-op   operators
+const GO_KW = /^(?:break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var)$/;
+const GO_TYPE = /^(?:any|bool|byte|comparable|complex64|complex128|error|float32|float64|int|int8|int16|int32|int64|rune|string|uint|uint8|uint16|uint32|uint64|uintptr)$/;
+const GO_CONST = /^(?:true|false|nil|iota)$/;
+
+function go(src) {
+  let out = '', i = 0;
+  const n = src.length;
+  let afterDot = false; // the previous token was a "." selector
+  while (i < n) {
+    const rest = src.slice(i);
+    let m;
+    if ((m = /^\/\/[^\n]*/.exec(rest)) || (m = /^\/\*[\s\S]*?(?:\*\/|$)/.exec(rest))) {
+      out += span('t-com', m[0]);
+    } else if ((m = /^"(?:\\.|[^"\\\n])*"?/.exec(rest)) ||
+               (m = /^'(?:\\.|[^'\\\n])*'?/.exec(rest)) ||
+               (m = /^`[^`]*`?/.exec(rest))) {
+      out += span('t-str', m[0]);
+    } else if ((m = /^(?:0[xX][\da-fA-F_]+|\d[\d_]*(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+)/.exec(rest))) {
+      out += span('t-num', m[0]);
+    } else if ((m = /^[A-Za-z_]\w*/.exec(rest))) {
+      const w = m[0];
+      const call = src[i + w.length] === '(';
+      const cls = GO_KW.test(w) ? 't-kw'
+        : GO_CONST.test(w) ? 't-num'
+        : call ? 't-fn'
+        : GO_TYPE.test(w) ? 't-cls'
+        : afterDot && /^[A-Z]/.test(w) ? 't-cls'
+        : 't-id';
+      out += span(cls, w);
+    } else if ((m = /^(?::=|\.\.\.|&&|\|\||<-|[-+*\/%&|^<>!=]=?)/.exec(rest))) {
+      out += span('t-op', m[0]);
+    } else {
+      m = [src[i]];
+      out += esc(m[0]);
+    }
+    if (m[0].trim()) afterDot = m[0] === '.';
+    i += m[0].length;
+  }
+  return out;
+}
+
 // --- error marker ------------------------------------------------------------
 // errorMark(ta) marks a compile error's line in an overlay editor: a tinted
 // band across the line with a bar at the left edge (the host styles
@@ -278,7 +332,7 @@ function errorMark(ta) {
   };
 }
 
-const api = { styl, css, escape: esc, editor, errorMark };
+const api = { styl, css, go, escape: esc, editor, errorMark };
 if (typeof window !== 'undefined') window.stylHi = api;
 if (typeof module !== 'undefined') module.exports = api;
 })();
