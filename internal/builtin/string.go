@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/rohanthewiz/go-styl/internal/value"
@@ -16,6 +17,11 @@ func init() {
 	register("substr", substr)
 	register("replace", replace)
 	register("split", split)
+	register("basename", basename)
+	register("dirname", dirname)
+	register("extname", extname)
+	register("pathjoin", pathjoin)
+	register("convert", convert)
 }
 
 // strVal returns the textual content of a value (a Str's raw text, or any value's
@@ -156,4 +162,66 @@ func quoteOf(v value.Value) rune {
 		return s.Quote
 	}
 	return 0
+}
+
+// The path functions work on slash-separated paths (URLs and asset paths
+// in a stylesheet) and return single-quoted strings, as Stylus does.
+func pathStr(s string) value.Value { return &value.Str{Val: s, Quote: '\''} }
+
+// basename(path, [ext]) is the last path element, without ext when it ends
+// the name: basename("a/b/c.png", ".png") is 'c'.
+func basename(args []value.Value) (value.Value, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return nil, fmt.Errorf("basename() expects 1 or 2 arguments, got %d", len(args))
+	}
+	base := path.Base(strVal(args[0]))
+	if len(args) == 2 {
+		base = strings.TrimSuffix(base, strVal(args[1]))
+	}
+	return pathStr(base), nil
+}
+
+// dirname(path) is everything before the last element: 'a/b'.
+func dirname(args []value.Value) (value.Value, error) {
+	if err := wantArgs("dirname", args, 1); err != nil {
+		return nil, err
+	}
+	return pathStr(path.Dir(strVal(args[0]))), nil
+}
+
+// extname(path) is the extension, dot included: '.png'.
+func extname(args []value.Value) (value.Value, error) {
+	if err := wantArgs("extname", args, 1); err != nil {
+		return nil, err
+	}
+	return pathStr(path.Ext(strVal(args[0]))), nil
+}
+
+// pathjoin(parts...) joins and cleans path parts: 'a/b/c.png'.
+func pathjoin(args []value.Value) (value.Value, error) {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = strVal(a)
+	}
+	return pathStr(path.Join(parts...)), nil
+}
+
+// convert(str) turns a string into the value it spells: convert("10px") is
+// the number 10px, convert("#fff") a color, anything else an identifier.
+// (Stylus parses the string as an expression; go-styl handles the single
+// values that are its use in practice.)
+func convert(args []value.Value) (value.Value, error) {
+	if err := wantArgs("convert", args, 1); err != nil {
+		return nil, err
+	}
+	s := strings.TrimSpace(strVal(args[0]))
+	if n, err := value.ParseNumber(s); err == nil {
+		return n, nil
+	}
+	if strings.HasPrefix(s, "#") {
+		if c, err := value.ParseColor(s); err == nil {
+			return c, nil
+		}
+	}
+	return &value.Ident{Name: s}, nil
 }

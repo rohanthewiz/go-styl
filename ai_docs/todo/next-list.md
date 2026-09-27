@@ -29,7 +29,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-040
+**Next ID:** N-041
 
 ## Open
 
@@ -37,10 +37,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   Value-level source mapping. Maps are selector/declaration/at-rule granular
   today. Still in the README's Future line; dropped from the session lists
   after `2026-0701-2034-m11-wasm-playground-deploy`.
-- **N-004** · raised `2026-0624-1853-go-styl-m6a-m6b` · value low
-  More built-ins and deeper compress parity. In the README's Future line;
-  dropped from the session lists after
-  `2026-0701-2034-m11-wasm-playground-deploy`.
 - **N-005** · raised `2026-0701-1623-go-styl-m7-m8` · value low
   A Stylus LSP (killer feature #4), with `styl fmt` falling out of it. `styl
   fmt` was raised on its own here; `2026-0703-0846-m13-runtime-theming` folded
@@ -55,6 +51,13 @@ session's attempt to compile cema's stylesheets with go-styl.
   Safe multi-tenant theme compilation / sandbox (killer feature #6).
 - **N-013** · raised `2026-0703-0959-playground-globals-exposure` · value low
   Dev-mode live reload for stylserve (killer features, honorable mention).
+- **N-040** · raised `2026-0927-1712-go-styl-more-builtins` · value low
+  The Stylus built-ins still missing after N-004. Hash-based: `merge`,
+  `keys`/`values` over objects, `contrast` (returns an object), `json`
+  (go-styl has no hash type). Evaluator context: `selector()`,
+  `selectors()`, `selector-exists()`, `current-media()`, `define()`,
+  `lookup()`, `use()`, `prefix-classes`, `add-property`, `warn`. Also
+  `pop`/`shift`/`push` don't mutate the list variable as in Stylus.
 
 ## Roadmap
 
@@ -83,6 +86,19 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-004** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-27, `2026-0927-1712-go-styl-more-builtins`
+  More built-ins, taken from a diff of Stylus's function list against the
+  registry: `asin/acos/atan`, `radians-to-degrees`/`degrees-to-radians`,
+  `sum`, `avg`, `odd`, `even`, `remove-unit`, `percent-to-decimal`,
+  `base-convert`, `fade-in/out`, `grayscale`, `luminosity`, `blend`,
+  `transparentify`, `component`, `pop`, `shift`, `range`, `list-separator`,
+  `keys`/`values` (pairs), `clone`, `basename`/`dirname`/`extname`/
+  `pathjoin`, `convert`, `opposite-position`, `error`. Parity fixes:
+  `sin/cos/tan` take `deg` and round to 9 places; `saturate()`/`invert()`/
+  `grayscale()` pass through as CSS filter functions; a builtin called as a
+  statement runs (a function ending in `round(n)`, `error()` guards). 45
+  cases in `builtins_stylus_test.go` match stylus 0.64. The rest is N-040.
 
 - **N-012** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27, `2026-0927-1706-go-styl-per-request-globals`
   Per-request globals. `stylserve.Engine.AssetWith(path, globals)` layers

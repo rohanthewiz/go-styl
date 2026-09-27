@@ -20,11 +20,16 @@ Under active development -- consider this Alpha. The compiler currently supports
 - User-defined **functions** (return values) and **mixins** (emit declarations/rules),
   with default and rest (`args…`) parameters, in single-line and block forms
 - **Built-in functions** across color (`rgb`/`rgba`/`hsl`/`hsla`/`lighten`/`darken`/
-  `saturate`/`mix`/`tint`/`shade`/`complement`/`invert`/`hue`/`alpha`/…), math
-  (`abs`/`ceil`/`floor`/`round`/`min`/`max`/`pow`/`percentage`/…), list
-  (`length`/`push`/`index`/`last`/`join`/…), string (`unquote`/`quote`/`s`/`substr`/
-  `replace`/`split`/`uppercase`/…), and type (`typeof`/`unit`/`match`/`light`/`dark`),
-  with CSS named-color support
+  `saturate`/`mix`/`tint`/`shade`/`complement`/`invert`/`grayscale`/`fade-in`/
+  `fade-out`/`blend`/`transparentify`/`luminosity`/`component`/`hue`/`alpha`/…),
+  math (`abs`/`ceil`/`floor`/`round`/`min`/`max`/`pow`/`percentage`/`sin`/`asin`/
+  `sum`/`avg`/`odd`/`even`/`remove-unit`/`base-convert`/…), list
+  (`length`/`push`/`pop`/`shift`/`index`/`last`/`join`/`range`/`keys`/`values`/…),
+  string and path (`unquote`/`quote`/`s`/`substr`/`replace`/`split`/`uppercase`/
+  `basename`/`dirname`/`extname`/`pathjoin`/`convert`/…), and type
+  (`typeof`/`unit`/`match`/`light`/`dark`/`opposite-position`/`error`), with CSS
+  named-color support. `grayscale()`, `saturate()` and `invert()` with
+  non-color arguments pass through as the CSS filter functions.
 - String operators: concatenation (`"a" + b`) and sprintf (`"calc(100% - %s)" % x`)
 - Unknown functions pass through as literal CSS (`translateX(10px)`, `url(...)`)
 - **Interpolation** (`{expr}`) in selectors, property names, strings, and identifiers

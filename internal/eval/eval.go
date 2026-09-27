@@ -411,6 +411,18 @@ func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 				return nil
 			}
 		}
+		// A built-in called as a statement runs as an expression, as in
+		// Stylus: its value is the implicit return (a function body ending
+		// in `round(n)`), and its error stops compilation (`error('…')`
+		// guarding a mixin's arguments).
+		if _, isBuiltin := builtin.Lookup(s.Name); isBuiltin {
+			v, err := ev.evalCall(&ast.Call{Name: s.Name, Args: s.Args}, ctx.scope)
+			if err != nil {
+				return err
+			}
+			ctx.ret = v
+			return nil
+		}
 		candidates := ctx.scope.FuncNames()
 		for name := range builtin.Registry {
 			candidates = append(candidates, name)

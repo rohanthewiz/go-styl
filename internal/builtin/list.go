@@ -18,6 +18,13 @@ func init() {
 	register("last", last)
 	register("first", first)
 	register("join", join)
+	register("pop", pop)
+	register("shift", shift)
+	register("range", rangeFn)
+	register("list-separator", listSeparator)
+	register("keys", pairPart("keys", 0))
+	register("values", pairPart("values", 1))
+	register("clone", clone)
 }
 
 // asItems returns the elements a value represents as a list: a List's items, an
@@ -122,4 +129,112 @@ func listComma(v value.Value) bool {
 		return l.Comma
 	}
 	return false
+}
+
+// pop returns a list's last item (null for an empty list). Stylus's pop also
+// removes it from the list variable in place; go-styl values are immutable,
+// so the list is unchanged, like push() returning a new list.
+func pop(args []value.Value) (value.Value, error) {
+	if err := wantArgs("pop", args, 1); err != nil {
+		return nil, err
+	}
+	items := asItems(args[0])
+	if len(items) == 0 {
+		return value.Null{}, nil
+	}
+	return items[len(items)-1], nil
+}
+
+// shift returns a list's first item (null for an empty list); see pop for
+// the in-place difference from Stylus.
+func shift(args []value.Value) (value.Value, error) {
+	if err := wantArgs("shift", args, 1); err != nil {
+		return nil, err
+	}
+	items := asItems(args[0])
+	if len(items) == 0 {
+		return value.Null{}, nil
+	}
+	return items[0], nil
+}
+
+// maxRange caps range() so a tiny step can't allocate without bound.
+const maxRange = 100000
+
+// rangeFn implements range(start, stop, [step = 1]): start, start+step, …
+// up to and including stop, in start's unit.
+func rangeFn(args []value.Value) (value.Value, error) {
+	if len(args) < 2 || len(args) > 3 {
+		return nil, fmt.Errorf("range() expects 2 or 3 arguments, got %d", len(args))
+	}
+	start, err := argNum("range", args, 0)
+	if err != nil {
+		return nil, err
+	}
+	stop, err := argNum("range", args, 1)
+	if err != nil {
+		return nil, err
+	}
+	step := 1.0
+	if len(args) == 3 {
+		n, err := argNum("range", args, 2)
+		if err != nil {
+			return nil, err
+		}
+		if n.Num <= 0 {
+			return nil, fmt.Errorf("range() step must be positive, got %v", n.Num)
+		}
+		step = n.Num
+	}
+	var items []value.Value
+	for x := start.Num; x <= stop.Num; x += step {
+		if len(items) == maxRange {
+			return nil, fmt.Errorf("range() would produce more than %d items", maxRange)
+		}
+		items = append(items, &value.Number{Num: x, Unit: start.Unit})
+	}
+	return &value.List{Items: items}, nil
+}
+
+// listSeparator returns ',' for a comma list and ' ' otherwise, as a quoted
+// string (Stylus returns a String node).
+func listSeparator(args []value.Value) (value.Value, error) {
+	if err := wantArgs("list-separator", args, 1); err != nil {
+		return nil, err
+	}
+	sep := " "
+	if listComma(args[0]) {
+		sep = ","
+	}
+	return &value.Str{Val: sep, Quote: '\''}, nil
+}
+
+// pairPart implements keys/values over a list of pairs:
+// keys((a 1) (b 2)) is `a b`, values(...) is `1 2`. Stylus also accepts an
+// object (hash) here; go-styl has no hash type.
+func pairPart(fn string, i int) Func {
+	return func(args []value.Value) (value.Value, error) {
+		if err := wantArgs(fn, args, 1); err != nil {
+			return nil, err
+		}
+		var out []value.Value
+		for _, pair := range asItems(args[0]) {
+			items := asItems(pair)
+			if len(items) <= i {
+				return nil, fmt.Errorf("%s() expects a list of pairs, got %s", fn, pair.CSS(true))
+			}
+			out = append(out, items[i])
+		}
+		return &value.List{Items: out}, nil
+	}
+}
+
+// clone returns its argument. Stylus deep-copies so a later push() can't
+// change the original; go-styl values are never mutated, so a copy is not
+// needed.
+func clone(args []value.Value) (value.Value, error) {
+	if err := wantArgs("clone", args, 1); err != nil {
+		return nil, err
+	}
+	return args[0], nil
 }

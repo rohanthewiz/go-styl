@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -14,6 +15,8 @@ func init() {
 	register("match", match)
 	register("light", light)
 	register("dark", dark)
+	register("opposite-position", oppositePosition)
+	register("error", errorFn)
 }
 
 func typeOf(args []value.Value) (value.Value, error) {
@@ -81,4 +84,37 @@ func dark(args []value.Value) (value.Value, error) {
 	}
 	_, _, l := c.HSL()
 	return &value.Bool{Val: l < 0.5}, nil
+}
+
+// oppositePosition flips each position keyword:
+// opposite-position(top left) is `bottom right`.
+func oppositePosition(args []value.Value) (value.Value, error) {
+	var in []value.Value
+	for _, a := range args {
+		in = append(in, asItems(a)...)
+	}
+	opposite := map[string]string{
+		"top": "bottom", "bottom": "top", "left": "right", "right": "left", "center": "center",
+	}
+	out := make([]value.Value, len(in))
+	for i, v := range in {
+		o, ok := opposite[strVal(v)]
+		if !ok {
+			return nil, fmt.Errorf("opposite-position(): invalid position %s", v.CSS(true))
+		}
+		out[i] = &value.Ident{Name: o}
+	}
+	if len(out) == 1 {
+		return out[0], nil
+	}
+	return &value.List{Items: out}, nil
+}
+
+// errorFn implements error(msg): compilation stops with msg, positioned at
+// the calling line. Mixins use it to validate arguments.
+func errorFn(args []value.Value) (value.Value, error) {
+	if err := wantArgs("error", args, 1); err != nil {
+		return nil, err
+	}
+	return nil, errors.New(strVal(args[0]))
 }
