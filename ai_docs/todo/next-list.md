@@ -241,7 +241,7 @@ are recorded in the session docs.
   declaration. The one exception is `opacity: .00000001` vs Stylus's `1e-8`
   (the same number). The last go-styl fix: nested selector groups now
   combine child-major, as in Stylus. What's left is cema-side (five source
-  fixes, two of which change cema's CSS, plus switching the build), listed
+  fixes, three of which change cema's CSS, plus switching the build), listed
   in the session doc. Tooling in `ai_docs/tools/cema-parity/`.
 
 - **N-030** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1631-go-styl-undefined-mixin-doc`

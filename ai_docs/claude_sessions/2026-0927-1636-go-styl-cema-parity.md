@@ -37,6 +37,13 @@ output hides:
 
 1. **`_material_form.styl:138`:** `.form-help {` at column 0 inside the
    `mat-form()` mixin. Fix: indent it to 4 spaces (its `}` is at 4).
+   **Correction (later the same day):** this also **changes cema's CSS**.
+   At column 0, Stylus emits `.form-help` and every material-form rule
+   after it (`.form-group input`, `.form-group .bar`, …) at the root;
+   indenting nests them under `.wrapper-material-form`, a 286-line output
+   diff. The parity run below compared both compilers on the same patched
+   copy, so it never saw this; comparing patched against unpatched stylus
+   did.
 2. **`_material_form.styl:4`:** `// @import url(...)` at column 0 between
    `mat-form()` and its body. In Stylus, that comment **ends the mixin**:
    the whole body is emitted once at the root, and the `mat-form()` call
@@ -98,11 +105,15 @@ affect structure, and small numbers print in decimal form.
 
 To drop the `stylus` npm dependency on `roh/use-go-styl`:
 
-- Apply quirk fixes 1, 4 and 5. They don't change the CSS.
-- Decide on 2 and 3. They do change the CSS (material form scoped under
-  `#main`; banner children under `#banner`). To keep today's output
+- Apply quirk fixes 4 and 5. They don't change the CSS. **Done**: cema
+  commit `821533e` on `roh/use-go-styl`; stylus output for all 7 sheets
+  is byte-identical before and after.
+- Decide on 1, 2 and 3. They do change the CSS (the rules after
+  `.form-help` nested under `.wrapper-material-form`; material form scoped
+  under `#main`; banner children under `#banner`). To keep today's output
   instead, move the material-form rules out of the mixin and dedent the
-  banner children.
+  banner children. (This list first said fix 1 was CSS-neutral; see the
+  correction under quirk 1.)
 - Switch the build to `styl` (or go-styl as a library) and diff
   `dist/css` once.
 
