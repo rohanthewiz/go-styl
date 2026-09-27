@@ -429,9 +429,11 @@ Things to be aware of:
 
 - Source maps map at selector / declaration / at-rule granularity (column-accurate
   for those, including compressed output); they do not yet map inside values.
-- Inside `url(...)` and `calc(...)`, bare Stylus variables are *not* evaluated —
-  use interpolation: `calc(100% - {gutter})`. (`@media` query values *are*
-  evaluated: `@media (min-width: bp)`.)
+- Inside `calc(...)`, bare Stylus variables are *not* evaluated (as in
+  Stylus) — use interpolation: `calc(100% - {gutter})`, or `s()`/`%`.
+  `url(...)` evaluates its contents when they reference a variable
+  (`url(base + "x.png")` → `url("/img/x.png")`) and otherwise passes through
+  verbatim. (`@media` query values *are* evaluated: `@media (min-width: bp)`.)
 - Arithmetic in a `@media` query needs interpolation: `@media (min-width: {bp * 2})`.
 - In brace syntax, a stand-alone `{expr}` in value position is not supported —
   use the bare variable (`width x`, not `width {x}`).

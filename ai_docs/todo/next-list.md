@@ -29,15 +29,10 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-038
+**Next ID:** N-039
 
 ## Open
 
-- **N-001** · raised `2026-0624-1853-go-styl-m6a-m6b` · value low
-  Evaluate bare variables inside `url()`. Stylus turns `p = "a.png"` +
-  `url(p)` into `url("a.png")`; go-styl emits `url(p)`. (Originally raised
-  together with `calc()`, but Stylus leaves `calc()` args literal too, so only
-  `url()` is a gap.) Dropped off the list after this doc.
 - **N-003** · raised `2026-0624-1853-go-styl-m6a-m6b` · value low
   Value-level source mapping. Maps are selector/declaration/at-rule granular
   today. Still in the README's Future line; dropped from the session lists
@@ -102,6 +97,11 @@ session's attempt to compile cema's stylesheets with go-styl.
   Tutorial's "where to next" lesson: link to element's tutorial
   (https://rohanthewiz.github.io/element/#tutorial), mirroring element's link
   here.
+- **N-038** · raised `2026-0927-1645-go-styl-url-variables` · value medium
+  Interpolating a quoted string keeps its quotes: with `s = "x"`, `.a-{s}`
+  gives `.a-"x"` where Stylus gives `.a-x`, and `url({base}x.png)` gives
+  `url("/img/"x.png)`. `evalString` (`internal/eval/m4.go`) uses the
+  value's CSS form; Stylus uses a string's raw value.
 
 ## Roadmap
 
@@ -130,6 +130,14 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-001** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-27, `2026-0927-1645-go-styl-url-variables`
+  Variables inside `url()`. `evalURL` (`internal/eval/eval.go`) evaluates a
+  raw `url(...)` token when its contents parse as an expression that
+  references a defined variable, and prints Stylus-style `url("…")`
+  (strings unquoted, list items run together). Anything else stays verbatim,
+  avoiding quoting churn on every existing `url()`. Tests in
+  `url_vars_test.go` match stylus 0.64 semantically.
 
 - **N-008** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · closed 2026-09-27, `2026-0927-1643-go-styl-list-indexing`
   List indexing. New `ast.Index`, parsed as a postfix on any operand when

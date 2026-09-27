@@ -556,6 +556,10 @@ func (ev *evaluator) evalExpr(e ast.Expr, scope *Scope) (value.Value, error) {
 			}
 			return &value.Ident{Name: s}, nil
 		}
+		// url(...) arrives as one raw token (see the lexer's rawCallNames).
+		if v, ok := ev.evalURL(x.Name, scope); ok {
+			return v, nil
+		}
 		// Variable reference inlines its value; otherwise it's a bare keyword.
 		if v, ok := scope.Get(x.Name); ok {
 			return v, nil
@@ -582,6 +586,82 @@ func (ev *evaluator) evalExpr(e ast.Expr, scope *Scope) (value.Value, error) {
 	default:
 		return nil, fmt.Errorf("cannot evaluate expression %T", e)
 	}
+}
+
+// evalURL evaluates variables inside a raw `url(...)` token, as Stylus does:
+// with p = "a.png", url(p) is url("a.png") and url(base + p) joins the two.
+//
+// Stylus parses every url() argument as an expression and always prints the
+// result quoted. go-styl keeps url() contents verbatim (so url(/a.png),
+// url(data:…) and url(a/b) pass through untouched, with no quoting churn)
+// and only evaluates when the contents parse as an expression that
+// references a defined variable. The output then follows Stylus's compiler:
+// strings contribute their unquoted text, list items are joined with no
+// separator, and the whole is wrapped in double quotes.
+//
+// ok is false when the token is not a url() call, or when it stays verbatim:
+// no variable is referenced, the contents don't parse, or evaluating them
+// fails (the verbatim text is the safer output for odd URLs).
+func (ev *evaluator) evalURL(name string, scope *Scope) (value.Value, bool) {
+	if len(name) < 5 || !strings.EqualFold(name[:4], "url(") || !strings.HasSuffix(name, ")") {
+		return nil, false
+	}
+	inner := strings.TrimSpace(name[4 : len(name)-1])
+	e, err := parser.ParseExpr(inner, 0)
+	if err != nil || !refsVariable(e, scope) {
+		return nil, false
+	}
+	v, err := ev.evalExpr(e, scope)
+	if err != nil {
+		return nil, false
+	}
+	return &value.Ident{Name: `url("` + urlText(value.Deref(v)) + `")`}, true
+}
+
+// refsVariable reports whether e mentions an identifier that names a
+// variable in scope.
+func refsVariable(e ast.Expr, scope *Scope) bool {
+	switch x := e.(type) {
+	case *ast.Ident:
+		_, ok := scope.Get(x.Name)
+		return ok
+	case *ast.Unary:
+		return refsVariable(x.X, scope)
+	case *ast.Binary:
+		return refsVariable(x.L, scope) || refsVariable(x.R, scope)
+	case *ast.List:
+		for _, it := range x.Items {
+			if refsVariable(it, scope) {
+				return true
+			}
+		}
+	case *ast.Call:
+		for _, a := range x.Args {
+			if refsVariable(a, scope) {
+				return true
+			}
+		}
+	case *ast.Index:
+		return refsVariable(x.X, scope) || refsVariable(x.Index, scope)
+	}
+	return false
+}
+
+// urlText is a value's text inside url("…"): a string without its quotes,
+// a list's items run together (Stylus prints url() arguments with no
+// spaces), anything else its CSS form.
+func urlText(v value.Value) string {
+	switch t := v.(type) {
+	case *value.Str:
+		return t.Val
+	case *value.List:
+		var b strings.Builder
+		for _, it := range t.Items {
+			b.WriteString(urlText(value.Deref(it)))
+		}
+		return b.String()
+	}
+	return v.CSS(true)
 }
 
 // evalIndex evaluates a subscript the way Stylus does (visitMember/
