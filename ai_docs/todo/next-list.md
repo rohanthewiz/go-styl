@@ -68,10 +68,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
   A Go highlighter for `go` blocks in tutorial prose (currently escaped plain
   text).
-- **N-039** · raised `2026-0927-1658-go-styl-playground-error-marks` · value low
-  An expression that ends early reports `unexpected "" in expression`
-  (the EOF token's empty text), e.g. `width 1px +`. It should say
-  "unexpected end of expression".
 
 ## Roadmap
 
@@ -100,6 +96,11 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-039** · raised `2026-0927-1658-go-styl-playground-error-marks` · closed 2026-09-27, `2026-0927-1659-go-styl-eof-error-message`
+  An expression that ends early now reports `unexpected end of expression`
+  (a `token.EOF` case in `parseOperand`) instead of `unexpected ""`. Test in
+  `TestM7ErrorPositions`.
 
 - **N-016** · raised `2026-0706-1250-playground-highlighting-tutorial` · closed 2026-09-27, `2026-0927-1658-go-styl-playground-error-marks`
   Compile errors marked in the editor. The overlay editor has no gutter, so

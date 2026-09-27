@@ -241,6 +241,9 @@ func (p *exprParser) parseOperand() (ast.Expr, error) {
 		}
 		p.next()
 		return e, nil
+	case token.EOF:
+		// The line ended where an operand was due (`width 1px +`).
+		return nil, diag.Errorf(p.line, 0, "unexpected end of expression")
 	default:
 		return nil, diag.Errorf(p.line, 0, "unexpected %q in expression", t.Text)
 	}

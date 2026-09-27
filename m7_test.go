@@ -39,6 +39,11 @@ func TestM7ErrorPositions(t *testing.T) {
 			want: `<input>:2:3: expected ')'`,
 		},
 		{
+			name: "expression ends early",
+			src:  "body\n  width 1px +\n",
+			want: `<input>:2:3: unexpected end of expression`,
+		},
+		{
 			name: "lexer error positioned",
 			src:  "body\n  content \"oops\n",
 			want: `<input>:2:3: unterminated string literal`,
