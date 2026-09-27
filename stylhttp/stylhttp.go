@@ -19,6 +19,9 @@
 //
 // NewWithGlobals varies the CSS per request (a tenant's brand color, a
 // user's theme), compiling and caching each distinct variable set once.
+//
+// In development, Options.LiveReload adds a script that swaps in fresh CSS
+// when a source changes: include <script src="/css/_live.js"></script>.
 package stylhttp
 
 import (
@@ -34,7 +37,7 @@ import (
 // described by opts. The request path (after any mux prefix stripping) is
 // mapped to a .styl source: "sub/app.css" -> "sub/app.styl".
 func New(opts stylserve.Options) http.Handler {
-	return &handler{eng: stylserve.New(opts)}
+	return &handler{eng: stylserve.New(opts), live: opts.LiveReload}
 }
 
 // NewWithGlobals is New with per-request globals: globals(r) returns
@@ -53,13 +56,22 @@ func New(opts stylserve.Options) http.Handler {
 // response is marked Cache-Control: private, so shared caches don't serve
 // one tenant's CSS to another.
 func NewWithGlobals(opts stylserve.Options, globals func(r *http.Request) map[string]any, vary ...string) http.Handler {
-	return &handler{eng: stylserve.New(opts), globals: globals, vary: vary}
+	return &handler{eng: stylserve.New(opts), globals: globals, vary: vary, live: opts.LiveReload}
 }
 
 type handler struct {
 	eng     *stylserve.Engine
 	globals func(r *http.Request) map[string]any // nil for New
 	vary    []string
+	live    bool // serve _live.js and _live (see live.go)
+}
+
+// requestGlobals returns the per-request globals (nil without a callback).
+func (h *handler) requestGlobals(r *http.Request) map[string]any {
+	if h.globals == nil {
+		return nil
+	}
+	return h.globals(r)
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -69,9 +81,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var vars map[string]any
+	if h.live && h.serveLive(w, r) {
+		return
+	}
+
+	vars := h.requestGlobals(r)
 	if h.globals != nil {
-		vars = h.globals(r)
 		if len(h.vary) > 0 {
 			for _, v := range h.vary {
 				w.Header().Add("Vary", v)

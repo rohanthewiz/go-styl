@@ -49,8 +49,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   `styl migrate`: Stylus → modern CSS migration tool (killer feature #5).
 - **N-011** · raised `2026-0703-0846-m13-runtime-theming` · value low
   Safe multi-tenant theme compilation / sandbox (killer feature #6).
-- **N-013** · raised `2026-0703-0959-playground-globals-exposure` · value low
-  Dev-mode live reload for stylserve (killer features, honorable mention).
 - **N-040** · raised `2026-0927-1712-go-styl-more-builtins` · value low
   The Stylus built-ins still missing after N-004. Hash-based: `merge`,
   `keys`/`values` over objects, `contrast` (returns an object), `json`
@@ -86,6 +84,15 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-013** · raised `2026-0703-0959-playground-globals-exposure` · closed 2026-09-27, `2026-0927-1715-go-styl-live-reload`
+  Dev-mode live reload. `stylserve.Options.LiveReload` makes `stylhttp`
+  serve `_live.js` (it finds the page's stylesheets under its own prefix and
+  opens an EventSource per sheet) and `_live?css=<name>.css`, an SSE stream
+  that polls the engine every 500ms. A change event swaps in fresh CSS
+  without a reload; compile errors go to the console and the last good CSS
+  stays. No fs watcher dependency. Tests in `stylhttp/live_test.go`;
+  browser-verified.
 
 - **N-004** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-27, `2026-0927-1712-go-styl-more-builtins`
   More built-ins, taken from a diff of Stylus's function list against the

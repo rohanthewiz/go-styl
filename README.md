@@ -378,6 +378,24 @@ mux.Handle("/css/", http.StripPrefix("/css/", stylhttp.NewWithGlobals(
 
 Other frameworks call `stylserve.Engine.AssetWith(path, globals)` directly.
 
+In development, `LiveReload: true` swaps in fresh CSS as you edit, with no
+page reload: include the script once, next to your stylesheet links.
+
+```go
+mux.Handle("/css/", http.StripPrefix("/css/",
+    stylhttp.New(stylserve.Options{Dir: "./styles", LiveReload: true})))
+```
+
+```html
+<link rel="stylesheet" href="/css/app.css">
+<script src="/css/_live.js"></script>
+```
+
+The script opens an event stream per stylesheet (`/css/_live?css=app.css`).
+The server re-checks the sheet twice a second, sends a change when a source
+or `@import` changes, and sends compile errors to the browser console while
+keeping the last good CSS applied. Keep it off in production.
+
 ## CLI
 
 ```shell

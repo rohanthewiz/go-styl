@@ -44,6 +44,11 @@ type Options struct {
 	// CustomProperties lists root-level variables to expose as CSS custom
 	// properties (see styl.Options.CustomProperties).
 	CustomProperties []string
+	// LiveReload (development only) asks HTTP adapters to serve a small
+	// live-reload script and event stream next to the stylesheets, so a page
+	// swaps in fresh CSS when a source changes, without a reload. See
+	// stylhttp for the net/http wiring. The engine itself doesn't use it.
+	LiveReload bool
 	// MaxVariants caps how many per-globals variants (AssetWith with a
 	// non-empty set) are cached across all stylesheets (default 256). When
 	// full, the variants are dropped and rebuilt on demand; builds with no
