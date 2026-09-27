@@ -6,14 +6,13 @@
 //	goStyl.compile(src, {pretty, mergeDuplicates, sourcemap,
 //	                     globals, customProperties, pruneHTML}) ->
 //	    {css, map, pruned, used, ms} | {error, file, line, col, ms}
-//
-// With pruneHTML (a rendered page), the result also carries `pruned`: the
-// stylesheet reduced to the rules that page uses (styl.Prune, the engine
-// behind critical-CSS middleware), and `used`: the names found in the HTML
-// as {classes, ids, tags}.
-//
 //	goStyl.examples() -> [{name, source}]
 //	goStyl.version -> module version string
+//
+// With pruneHTML (a rendered page), the compile result also carries
+// `pruned`: the stylesheet reduced to the rules that page uses (styl.Prune,
+// the engine behind critical-CSS middleware), and `used`: the names found
+// in the HTML as {classes, ids, tags}.
 //
 // @import in playground source resolves against the embedded examples
 // filesystem, so the bundled examples (and user snippets that import them)
