@@ -641,6 +641,22 @@ func (ev *evaluator) evalBinary(b *ast.Binary, scope *Scope) (value.Value, error
 		}
 	}
 
+	// String concatenation: a string on the left of `+` joins the right
+	// side's text into a new string, as in Stylus's String#operate:
+	// "x" + "y" and "x" + y (an ident) both give 'xy'. Stylus quotes the
+	// result with ' whatever the operands' quotes. An unquoted left side
+	// (unquote(), s(), `%`) is a Literal in Stylus and stays unquoted:
+	// s("%s", 1) + "px" gives 1px.
+	if b.Op == token.PLUS {
+		if ls, isStr := l.(*value.Str); isStr {
+			quote := '\''
+			if ls.Quote == 0 {
+				quote = 0
+			}
+			return &value.Str{Val: ls.Val + concatText(r), Quote: quote}, nil
+		}
+	}
+
 	switch b.Op {
 	case token.PLUS, token.MINUS, token.STAR, token.POW, token.SLASH, token.PERCENT:
 		ln, lok := l.(*value.Number)
@@ -729,6 +745,26 @@ func (ev *evaluator) evalCall(c *ast.Call, scope *Scope) (value.Value, error) {
 		parts[i] = a.CSS(ev.opts.Pretty)
 	}
 	return &value.Ident{Name: c.Name + "(" + strings.Join(parts, sep) + ")"}, nil
+}
+
+// concatText is the text a value contributes to a string concatenation,
+// following Stylus's String#coerce: a string gives its raw value (no quotes),
+// a list joins its items' text with spaces (comma lists too), null is the
+// word "null", and anything else is its CSS form.
+func concatText(v value.Value) string {
+	switch t := v.(type) {
+	case *value.Str:
+		return t.Val
+	case *value.List:
+		parts := make([]string, len(t.Items))
+		for i, it := range t.Items {
+			parts[i] = concatText(it)
+		}
+		return strings.Join(parts, " ")
+	case value.Null, *value.Null:
+		return "null"
+	}
+	return v.CSS(true)
 }
 
 func opText(k token.Kind) string {

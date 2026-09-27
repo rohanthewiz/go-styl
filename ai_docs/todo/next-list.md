@@ -106,11 +106,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   Tutorial's "where to next" lesson: link to element's tutorial
   (https://rohanthewiz.github.io/element/#tutorial), mirroring element's link
   here.
-- **N-036** · raised `2026-0927-1525-go-styl-string-escapes` · value low
-  String operations. `length("abc")` is 3 in Stylus (it counts characters) but
-  1 in go-styl, which treats the string as a one-item list. `"x" + "y"` (and
-  `"x" + y`) joins into `'xy'` in Stylus but is `cannot apply "+" to string
-  and string` in go-styl. Found while probing N-026.
 - **N-037** · raised `2026-0927-1625-go-styl-semicolons` · value low
   A `;` inside parentheses in brace syntax ends the statement:
   `.a { background: url(data:image/png;base64,AAA=) }` → `unexpected ","`.
@@ -145,6 +140,14 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-036** · raised `2026-0927-1525-go-styl-string-escapes` · closed 2026-09-27, `2026-0927-1639-go-styl-string-ops`
+  String operations. `length()` of a single string counts its characters
+  (runes). A string on the left of `+` concatenates: the right side's text
+  (strings unquoted, lists space-joined, `null` as "null") goes into a new
+  `'…'` string, or an unquoted one when the left side is unquoted (Stylus's
+  Literal: `s("%s", 1) + "px"` → `1px`). Tests in `string_ops_test.go` match
+  stylus 0.64.
 
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1636-go-styl-cema-parity`
   go-styl side of compiling cema without stylus. With cema's source quirks

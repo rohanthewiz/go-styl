@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/rohanthewiz/go-styl/internal/value"
 )
@@ -35,6 +36,11 @@ func asItems(v value.Value) []value.Value {
 func length(args []value.Value) (value.Value, error) {
 	if err := wantArgs("length", args, 1); err != nil {
 		return nil, err
+	}
+	// A single string counts its characters, as in Stylus (length("abc") is
+	// 3). Anything else counts list items; a lone value is a one-item list.
+	if s, ok := args[0].(*value.Str); ok {
+		return &value.Number{Num: float64(utf8.RuneCountInString(s.Val))}, nil
 	}
 	return &value.Number{Num: float64(len(asItems(args[0])))}, nil
 }
