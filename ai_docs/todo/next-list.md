@@ -68,8 +68,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-016** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
   Playground: mark compile errors in the editor gutter from the result's
   `line`/`col`.
-- **N-017** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
-  Playground: shareable URLs (source in the hash).
 - **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
   A Go highlighter for `go` blocks in tutorial prose (currently escaped plain
   text).
@@ -101,6 +99,13 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-017** · raised `2026-0706-1250-playground-highlighting-tutorial` · closed 2026-09-27, `2026-0927-1655-go-styl-playground-share-links`
+  Shareable playground URLs. A **share** button encodes the source, globals
+  and options as `#z/<base64url(deflate-raw JSON)>` (`#u/` uncompressed
+  fallback), puts it in the address bar and copies it. Opening a link loads
+  it without overwriting the visitor's saved draft until they edit; the
+  first edit drops the stale hash. Browser-verified.
 
 - **N-018** · raised `2026-0706-1250-playground-highlighting-tutorial` · closed 2026-09-27, `2026-0927-1653-go-styl-tutorial-deep-links`
   Tutorial deep links. `#tut/<lesson-id>` opens the tutorial at that lesson,

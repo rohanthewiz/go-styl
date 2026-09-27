@@ -87,6 +87,12 @@
   }
   nav.tabs button.on { background: var(--panel); color: var(--fg); box-shadow: 0 0 0 1px var(--edge); }
   body[data-tab="tutorial"] .playctl { display: none; }
+  header button.share {
+    background: var(--bg); color: var(--fg); border: 1px solid var(--edge);
+    border-radius: 5px; padding: .22rem .6rem; font: inherit; font-size: .85rem; cursor: pointer;
+  }
+  header button.share:hover { border-color: var(--accent); color: var(--accent); }
+  header .sharestat { color: var(--ok); font-size: .8rem; }
 
   /* --- shared pane chrome ----------------------------------------------------- */
   main { flex: 1; display: flex; min-height: 0; }
@@ -270,6 +276,8 @@
   <label class="playctl"><input type="checkbox" id="pretty" checked> pretty</label>
   <label class="playctl"><input type="checkbox" id="merge"> merge duplicates</label>
   <label class="playctl"><input type="checkbox" id="sourcemap"> source map</label>
+  <button class="playctl share" id="share" title="Put this code in a link (address bar + clipboard)">share</button>
+  <span class="playctl sharestat" id="sharestat"></span>
   <label><input type="checkbox" id="hl" checked> highlight</label>
   <span class="spacer"></span>
   <span class="meta" id="version"></span>
@@ -402,6 +410,7 @@ button(bg = primary)
   $('tab-tutorial').addEventListener('click', () => switchTab('tutorial'));
   window.playHooks = {
     openInPlayground(code) {
+      endShare();
       src.value = code;
       repaintSrc();
       switchTab('play');
@@ -432,10 +441,12 @@ button(bg = primary)
   function schedule() { clearTimeout(timer); timer = setTimeout(compile, 120); }
   function compile() {
     if (!ready) return;
-    try {
-      localStorage.setItem('go-styl-src', src.value);
-      localStorage.setItem('go-styl-globals', $('globals').value);
-    } catch (_) {}
+    if (persist) {
+      try {
+        localStorage.setItem('go-styl-src', src.value);
+        localStorage.setItem('go-styl-globals', $('globals').value);
+      } catch (_) {}
+    }
     const opts = {
       pretty: $('pretty').checked,
       mergeDuplicates: $('merge').checked,
@@ -478,9 +489,91 @@ button(bg = primary)
     });
   }
 
+  // --- shareable links ---------------------------------------------------------
+  // A share link carries the play tab's state in the URL hash:
+  //
+  //   #z/<base64url(deflate-raw(JSON))>   compressed (CompressionStream)
+  //   #u/<base64url(UTF-8 JSON)>          fallback where CompressionStream is missing
+  //
+  // JSON: { s: source, g: globals text, o: { pretty, merge, sourcemap } }.
+  // Opening a link loads that code without overwriting the visitor's saved
+  // draft: persist stays false (compile() skips localStorage) until they
+  // edit, and the first edit drops the now-stale hash.
+  let persist = true;
+  const b64url = {
+    enc(bytes) {
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000)
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    },
+    dec(str) {
+      const bin = atob(str.replace(/-/g, '+').replace(/_/g, '/'));
+      return Uint8Array.from(bin, c => c.charCodeAt(0));
+    },
+  };
+  async function pipeBytes(bytes, stream) {
+    const out = new Response(new Blob([bytes]).stream().pipeThrough(stream));
+    return new Uint8Array(await out.arrayBuffer());
+  }
+  async function encodeShare(state) {
+    const json = new TextEncoder().encode(JSON.stringify(state));
+    if (typeof CompressionStream === 'function')
+      return '#z/' + b64url.enc(await pipeBytes(json, new CompressionStream('deflate-raw')));
+    return '#u/' + b64url.enc(json);
+  }
+  // decodeShare returns the state in a share hash, or null for any other
+  // hash (or a malformed one).
+  async function decodeShare(hash) {
+    const m = /^#([zu])\/([\w-]+)$/.exec(hash);
+    if (!m) return null;
+    try {
+      let bytes = b64url.dec(m[2]);
+      if (m[1] === 'z') bytes = await pipeBytes(bytes, new DecompressionStream('deflate-raw'));
+      const st = JSON.parse(new TextDecoder().decode(bytes));
+      return typeof st.s === 'string' ? st : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  function applyShare(st) {
+    persist = false;
+    src.value = st.s;
+    $('globals').value = typeof st.g === 'string' ? st.g : '';
+    $('globalsbox').open = !!st.g;
+    const o = st.o || {};
+    $('pretty').checked = o.pretty !== false;
+    $('merge').checked = !!o.merge;
+    $('sourcemap').checked = !!o.sourcemap;
+    repaintSrc();
+    switchTab('play');
+    compile();
+  }
+  function endShare() {
+    if (persist) return;
+    persist = true;
+    if (/^#[zu]\//.test(location.hash))
+      history.replaceState(null, '', location.pathname + location.search);
+  }
+  $('share').addEventListener('click', async () => {
+    const hash = await encodeShare({
+      s: src.value,
+      g: $('globals').value,
+      o: { pretty: $('pretty').checked, merge: $('merge').checked, sourcemap: $('sourcemap').checked },
+    });
+    history.replaceState(null, '', hash);
+    persist = true; // the visitor's own code: keep saving it
+    let msg = 'link in address bar';
+    try { await navigator.clipboard.writeText(location.href); msg = 'link copied'; } catch (_) {}
+    const stat = $('sharestat');
+    stat.textContent = msg + ' · ' + location.href.length + ' chars';
+    clearTimeout(stat._t);
+    stat._t = setTimeout(() => { stat.textContent = ''; }, 4000);
+  });
+
   // --- wiring ----------------------------------------------------------------
-  src.addEventListener('input', schedule);
-  $('globals').addEventListener('input', schedule);
+  src.addEventListener('input', () => { endShare(); schedule(); });
+  $('globals').addEventListener('input', () => { endShare(); schedule(); });
   for (const id of ['pretty', 'merge', 'sourcemap'])
     $(id).addEventListener('change', compile);
   hlBox.addEventListener('change', () => {
@@ -541,6 +634,7 @@ button(bg = primary)
   $('example').addEventListener('change', e => {
     const ex = examplesByName[e.target.value];
     if (!ex) return;
+    endShare();
     src.value = ex.source;
     repaintSrc();
     compile();
@@ -567,7 +661,9 @@ button(bg = primary)
 
   // A #tut/<id> link opened while the page is already loaded (clicked in a
   // lesson, or pasted into the address bar) switches to that lesson.
-  window.addEventListener('hashchange', () => {
+  window.addEventListener('hashchange', async () => {
+    const shared = await decodeShare(location.hash);
+    if (shared) return applyShare(shared);
     const id = gsTutorial.lessonFromHash(location.hash);
     if (id && tutorial && tutorial.openId(id)) switchTab('tutorial');
     else if (location.hash === '#tutorial') switchTab('tutorial');
@@ -594,6 +690,10 @@ button(bg = primary)
   // Always switch, even to the default play tab, so body[data-tab] is set
   // from the first paint and CSS keyed on it applies to both tabs.
   switchTab(tab === 'tutorial' ? 'tutorial' : 'play');
+
+  // A share link replaces the restored source once decoded (async). Until
+  // the compiler boots, compile() is a no-op; onBoot compiles what's there.
+  decodeShare(location.hash).then(st => { if (st) applyShare(st); });
 })();
 </script>
 </body>
