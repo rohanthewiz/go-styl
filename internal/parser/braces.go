@@ -43,15 +43,96 @@ func usesBraces(src string) bool {
 // Statements are emitted on their original source line (padding with blank
 // lines as needed) so that error positions and source maps remain accurate.
 // Only statements sharing a source line (one-liner blocks) drift downward.
+//
+// Mixed files. Stylus lets one file use both syntaxes — an indented mixin whose
+// body contains brace blocks, or a brace block followed by indented rules — so
+// the output depth of a statement comes from one of two places:
+//
+//   - Inside braces, structure is the braces': a statement sits one level below
+//     the header of the innermost open `{`, whatever its source indentation.
+//   - Outside all braces, structure is the source indentation, resolved with the
+//     same pop-until-shallower stack the line-tree builder uses (indentStack).
+//
+// For example:
+//
+//	m()                 depth 0  (indentation)
+//	  .a {              depth 1  (indentation) ── opens brace, base = 1
+//	    color: red;     depth 2  (brace: base + 1)
+//	    .b { x: 1 }     depth 2, its body 3
+//	  }                 closes; `.a` is now a closed braced header
+//	  .d                depth 1  (indentation)
+//	    color blue      depth 2
+//
+// A header whose block was braced never adopts indentation children: a later
+// line indented deeper than it becomes its sibling. This keeps pure brace files
+// (where indentation is cosmetic) behaving exactly as before, e.g. a stray
+// indent after `}` does not nest the next rule inside the closed one.
 func bracesToIndent(src string) string {
 	runes := []rune(src)
 	var out strings.Builder
 	var lineBuf strings.Builder
-	depth := 0
 	srcLine := 1 // source line currently being scanned
 	bufLine := 1 // source line where the buffered statement began
 	outLine := 1 // line number the next output write lands on
 	hasContent := false
+
+	// braceDepths holds the output depth of the header of each open `{`,
+	// innermost last. Empty means we are outside all braces.
+	var braceDepths []int
+
+	// indentStack is the indentation ancestry for statements outside braces.
+	// braced marks a header whose `{…}` block has been opened: it can have
+	// siblings at deeper indentation but never indentation children.
+	type indentEntry struct {
+		indent, depth int
+		braced        bool
+	}
+	var indentStack []indentEntry
+
+	// Per-statement facts captured when its first non-space character arrives.
+	bufIndent := 0          // source indentation width of the buffered statement
+	bufAtLineStart := false // statement begins its source line (vs after `;`/`}`)
+	lineFlushed := false    // something was already emitted/consumed on this line
+
+	lastDepth := 0     // output depth of the most recently emitted statement
+	lastStmt := ""     // text of the most recently emitted statement
+	lastIndented := -1 // indentStack index of the last statement placed by indentation
+
+	// depthOf decides the output depth of the buffered statement s.
+	depthOf := func(s string) int {
+		if len(braceDepths) > 0 {
+			lastIndented = -1
+			return braceDepths[len(braceDepths)-1] + 1
+		}
+		// Outside braces. A statement that shares a line with a previous one
+		// (`a; b`, `} .b {`) is its sibling; so is the line after a selector
+		// that ends in a comma (a multi-line selector group).
+		if !bufAtLineStart {
+			lastIndented = -1
+			return lastDepth
+		}
+		if strings.HasSuffix(lastStmt, ",") {
+			// Continuation of a selector group: the group's first line keeps
+			// the indentStack entry (lastIndented), so a `{` after the group
+			// marks that entry braced.
+			return lastDepth
+		}
+		for len(indentStack) > 0 && indentStack[len(indentStack)-1].indent >= bufIndent {
+			indentStack = indentStack[:len(indentStack)-1]
+		}
+		depth := 0
+		if n := len(indentStack); n > 0 {
+			top := indentStack[n-1]
+			if top.braced {
+				depth = top.depth // sibling of a closed braced header
+			} else {
+				depth = top.depth + 1
+			}
+		}
+		indentStack = append(indentStack, indentEntry{indent: bufIndent, depth: depth})
+		lastIndented = len(indentStack) - 1
+		return depth
+	}
 
 	flush := func() {
 		s := strings.TrimSpace(lineBuf.String())
@@ -60,6 +141,7 @@ func bracesToIndent(src string) string {
 		if s == "" {
 			return
 		}
+		depth := depthOf(s)
 		for outLine < bufLine {
 			out.WriteByte('\n')
 			outLine++
@@ -68,12 +150,17 @@ func bracesToIndent(src string) string {
 		out.WriteString(s)
 		out.WriteByte('\n')
 		outLine++
+		lastDepth, lastStmt = depth, s
+		lineFlushed = true
 	}
 
 	buffer := func(s string) {
 		if !hasContent && strings.TrimSpace(s) != "" {
 			hasContent = true
 			bufLine = srcLine
+			bufAtLineStart = !lineFlushed
+			// lineBuf holds only this line's leading whitespace so far.
+			bufIndent, _ = splitIndent(lineBuf.String() + "x")
 		}
 		lineBuf.WriteString(s)
 		srcLine += strings.Count(s, "\n")
@@ -83,19 +170,32 @@ func bracesToIndent(src string) string {
 		text:   buffer,
 		interp: buffer,
 		open: func() {
-			flush() // the buffered text is the block header (selector/at-rule)
-			depth++
+			// The buffered text is the block header (selector/at-rule). When it
+			// is empty (`{` on its own line) the header is the previous statement.
+			flush()
+			if len(braceDepths) == 0 && lastIndented >= 0 && lastIndented < len(indentStack) {
+				indentStack[lastIndented].braced = true
+			}
+			braceDepths = append(braceDepths, lastDepth)
+			lineFlushed = true
 		},
 		close: func() {
 			flush()
-			if depth > 0 {
-				depth--
+			if n := len(braceDepths); n > 0 {
+				// The closed block's header becomes the reference point for a
+				// statement that follows on the same line (`} .next {`).
+				lastDepth = braceDepths[n-1]
+				braceDepths = braceDepths[:n-1]
 			}
+			lastStmt = ""
+			lastIndented = -1
+			lineFlushed = true
 		},
 		semi: func() { flush() },
 		newline: func() {
 			flush()
 			srcLine++
+			lineFlushed = false
 		},
 		skip: func(n int) { srcLine += n },
 	})
