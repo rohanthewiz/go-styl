@@ -82,11 +82,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
   A Go highlighter for `go` blocks in tutorial prose (currently escaped plain
   text).
-- **N-020** · raised `2026-0706-1417-element-playground-live-deploy-verified` · value low
-  Playground boot: call `switchTab(tab)` unconditionally. `index.html` still
-  does `if (tab === 'tutorial') switchTab('tutorial')`, leaving
-  `body[data-tab]` unset when booting to the play tab. Harmless until
-  something styles `body[data-tab="play"]`.
 - **N-021** · raised `2026-0706-1417-element-playground-live-deploy-verified` · value low
   Tutorial's "where to next" lesson: link to element's tutorial
   (https://rohanthewiz.github.io/element/#tutorial), mirroring element's link
@@ -119,6 +114,11 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-020** · raised `2026-0706-1417-element-playground-live-deploy-verified` · closed 2026-09-27, `2026-0927-1648-go-styl-playground-boot-tab`
+  Playground boot calls `switchTab` unconditionally
+  (`switchTab(tab === 'tutorial' ? 'tutorial' : 'play')`), so
+  `body[data-tab]` is set from the first paint on either tab.
 
 - **N-006** · raised `2026-0701-1917-go-styl-difftest-and-stylus-parity` · closed 2026-09-27, `2026-0927-1647-go-styl-cema-shaped-corpus`
   Difftest corpus grown with `difftest/corpus/cema-shaped.styl` (plus

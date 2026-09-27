@@ -572,7 +572,9 @@ button(bg = primary)
   let tab = 'play';
   try { tab = localStorage.getItem('go-styl-tab') || 'play'; } catch (_) {}
   if (location.hash === '#tutorial') tab = 'tutorial';
-  if (tab === 'tutorial') switchTab('tutorial');
+  // Always switch, even to the default play tab, so body[data-tab] is set
+  // from the first paint and CSS keyed on it applies to both tabs.
+  switchTab(tab === 'tutorial' ? 'tutorial' : 'play');
 })();
 </script>
 </body>
