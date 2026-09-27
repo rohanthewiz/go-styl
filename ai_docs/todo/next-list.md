@@ -106,12 +106,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   Tutorial's "where to next" lesson: link to element's tutorial
   (https://rohanthewiz.github.io/element/#tutorial), mirroring element's link
   here.
-- **N-037** · raised `2026-0927-1625-go-styl-semicolons` · value low
-  A `;` inside parentheses in brace syntax ends the statement:
-  `.a { background: url(data:image/png;base64,AAA=) }` → `unexpected ","`.
-  `scanStructural` doesn't track paren depth. The indentation syntax keeps
-  the URI intact. Stylus fails on an unquoted data URI in both syntaxes, so
-  this only matters beyond Stylus compatibility. Found while probing N-027.
 
 ## Roadmap
 
@@ -140,6 +134,13 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-037** · raised `2026-0927-1625-go-styl-semicolons` · closed 2026-09-27, `2026-0927-1640-go-styl-brace-parens-semicolon`
+  `;` inside parentheses in brace syntax. `scanStructural` tracks `( )`
+  depth per line and emits a `;` inside parens as text, so
+  `.a { background: url(data:image/png;base64,…) }` works. The depth resets
+  at newlines and block braces, so an unbalanced `(` can't swallow later
+  statements. Tests in `TestSemicolonInParensBraceSyntax`.
 
 - **N-036** · raised `2026-0927-1525-go-styl-string-escapes` · closed 2026-09-27, `2026-0927-1639-go-styl-string-ops`
   String operations. `length()` of a single string counts its characters

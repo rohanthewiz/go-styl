@@ -473,7 +473,7 @@ CSS, go-styl chooses differently on purpose:
   the mixin.
 - **Backslash-escaped quotes stay inside a string** (`'it\'s'`); Stylus
   fails to parse them.
-- **A `;` inside `url(...)` is kept** in the indentation syntax
+- **A `;` inside parentheses is kept** in both syntaxes
   (`url(data:image/png;base64,…)`); Stylus fails to parse an unquoted data
   URI.
 - **`@extend .x;`** accepts a trailing `;`; Stylus reads it as part of the

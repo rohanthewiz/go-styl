@@ -228,9 +228,26 @@ func scanStructural(runes []rune, h scanHandlers) {
 		}
 	}
 
+	// parens is the ( ) nesting depth on the current line. A `;` inside
+	// parentheses is text, not a statement end, so an unquoted data URI
+	// (`url(data:image/png;base64,…)`) survives. The depth resets at each
+	// newline and block brace, so an unbalanced `(` can only swallow the
+	// `;` of its own line.
+	parens := 0
+
 	for i := 0; i < n; i++ {
 		c := runes[i]
 		switch {
+		case c == '(':
+			parens++
+			emitText("(")
+
+		case c == ')':
+			if parens > 0 {
+				parens--
+			}
+			emitText(")")
+
 		case c == '"' || c == '\'':
 			// String literal: copy verbatim, honoring escapes.
 			j := i + 1
@@ -284,15 +301,20 @@ func scanStructural(runes []rune, h scanHandlers) {
 						return
 					}
 				}
+				parens = 0
 				if h.open != nil {
 					h.open()
 				}
 			}
 
 		case c == '}':
+			parens = 0
 			if h.close != nil {
 				h.close()
 			}
+
+		case c == ';' && parens > 0:
+			emitText(";")
 
 		case c == ';':
 			if h.semi != nil {
@@ -300,6 +322,7 @@ func scanStructural(runes []rune, h scanHandlers) {
 			}
 
 		case c == '\n':
+			parens = 0
 			if h.newline != nil {
 				h.newline()
 			}

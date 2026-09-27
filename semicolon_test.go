@@ -56,3 +56,29 @@ func TestSemicolonErrorColumn(t *testing.T) {
 		t.Fatalf("want an error at 2:14, got %v", err)
 	}
 }
+
+// TestSemicolonInParensBraceSyntax covers a `;` inside parentheses in brace
+// syntax (N-037): it is part of the value, as in the indentation syntax, so
+// an unquoted data URI survives. Stylus fails to parse an unquoted data URI
+// in either syntax.
+func TestSemicolonInParensBraceSyntax(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"data uri", ".a { background: url(data:image/png;base64,AAA=); color: red }",
+			".a{background:url(data:image/png;base64,AAA=);color:red}"},
+		{"multi-line block", ".a {\n  background: url(data:image/png;base64,AAA=);\n  top: 0;\n}",
+			".a{background:url(data:image/png;base64,AAA=);top:0}"},
+		{"statements after parens still split", ".a { width: calc(100% - 2px); top: 0 }",
+			".a{width:calc(100% - 2px);top:0}"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := compileMin(t, c.src+"\n"); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
