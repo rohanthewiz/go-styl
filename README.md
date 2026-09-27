@@ -480,7 +480,13 @@ CSS, go-styl chooses differently on purpose:
   selector and fails to extend.
 - **Numbers are always rounded to 15 decimals** when printed. Stylus skips
   this for compressed values between -1 and 1 and prints
-  `.30000000000000004`.
+  `.30000000000000004`. Very small numbers print in decimal form
+  (`.00000001`) where Stylus prints JavaScript's `1e-8`.
+- **Comment lines never affect structure.** In Stylus, the indentation of a
+  `//` line counts: a column-0 comment between `m()` and its body ends the
+  definition (the body lands at the root), and a comment indented deeper
+  than the line above can re-nest what follows or drop a declaration.
+  go-styl ignores comment lines when reading indentation.
 
 ## Architecture
 

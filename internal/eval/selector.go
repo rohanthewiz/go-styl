@@ -26,9 +26,15 @@ func combineSelectors(parents, selfs []string, pretty bool) []string {
 		}
 		return out
 	}
+	// Child-major order, as in Stylus (utils.compileSelectors recurses from
+	// the innermost level outward): `.a, .b` over `.x, .y` gives
+	// `.a .x, .b .x, .a .y, .b .y`. parents is already in this order from the
+	// levels above, so applying it one level at a time matches Stylus at any
+	// depth. Order within a group never changes what matches; it keeps the
+	// output byte-compatible.
 	out := make([]string, 0, len(parents)*len(selfs))
-	for _, p := range parents {
-		for _, s := range selfs {
+	for _, s := range selfs {
+		for _, p := range parents {
 			out = append(out, combine(p, s, pretty))
 		}
 	}

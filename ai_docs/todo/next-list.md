@@ -106,15 +106,6 @@ session's attempt to compile cema's stylesheets with go-styl.
   Tutorial's "where to next" lesson: link to element's tutorial
   (https://rohanthewiz.github.io/element/#tutorial), mirroring element's link
   here.
-- **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
-  Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
-  zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). All go-styl-side blockers
-  (N-002, N-023…N-030) are closed. With every gap patched around in a
-  scratch copy, the remaining diffs were all go-styl bugs listed here, plus
-  cema-side source quirks that
-  cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
-  `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
 - **N-035** · raised `2026-0927-1357-go-styl-multiline-selectors` · value low
   A nested selector that starts with a pseudo-class joins its parent without
   a space: `.x` over `:hover` gives `.x:hover`, while Stylus gives
@@ -151,6 +142,16 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1636-go-styl-cema-parity`
+  go-styl side of compiling cema without stylus. With cema's source quirks
+  patched in a scratch copy, all 7 sheets (`master.styl` + six
+  `theme_masters`) match stylus 0.64 in rule order, selector order and every
+  declaration. The one exception is `opacity: .00000001` vs Stylus's `1e-8`
+  (the same number). The last go-styl fix: nested selector groups now
+  combine child-major, as in Stylus. What's left is cema-side (five source
+  fixes, two of which change cema's CSS, plus switching the build), listed
+  in the session doc. Tooling in `ai_docs/tools/cema-parity/`.
 
 - **N-030** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1631-go-styl-undefined-mixin-doc`
   Undefined mixin calls stay an error, now documented as deliberate: a
