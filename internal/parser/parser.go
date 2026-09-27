@@ -51,13 +51,38 @@ func buildTree(src string) ([]*line, error) {
 	root := &line{indent: -1}
 	stack := []*line{root}
 
+	// cont is the line whose text ends in a trailing comma, if any. As in
+	// Stylus, a trailing comma continues the statement on the next non-blank
+	// line whatever that line's indentation, so the next line's content is
+	// appended to cont instead of entering the tree:
+	//
+	//	.a,          →  ".a, .b"  (line 1, indent 0)
+	//	  .b         ┘
+	//	  color red  →  child of ".a, .b"
+	//
+	// This covers multi-line selector groups and multi-line value lists
+	// (`transition opacity 1s,` / `transform 2s`) in both syntaxes, since
+	// bracesToIndent leaves each group line as its own output line.
+	var cont *line
+
 	for i, raw := range strings.Split(cleaned, "\n") {
 		indent, content := splitIndent(raw)
 		if content == "" {
 			continue // blank or comment-only line
 		}
 
+		if cont != nil {
+			cont.text += " " + content
+			if !strings.HasSuffix(content, ",") {
+				cont = nil
+			}
+			continue
+		}
+
 		ln := &line{text: content, indent: indent, lineNo: i + 1}
+		if strings.HasSuffix(content, ",") {
+			cont = ln
+		}
 
 		// Pop until we find a parent with smaller indentation.
 		for len(stack) > 1 && stack[len(stack)-1].indent >= indent {
@@ -104,6 +129,7 @@ func onlyEOF(toks []token.Token) bool {
 // parseBlock parses a list of sibling lines into statements, grouping
 // if/else-if/else chains into single If statements.
 func parseBlock(lines []*line) ([]ast.Stmt, error) {
+	lines = groupSelectorLines(lines)
 	var stmts []ast.Stmt
 	for i := 0; i < len(lines); i++ {
 		ln := lines[i]

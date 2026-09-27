@@ -29,7 +29,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-035
+**Next ID:** N-036
 
 ## Open
 
@@ -109,18 +109,12 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
   zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). Blocked by N-024…N-030
-  (N-002, mixed syntax, is closed). With every gap patched around in a
+  dependency (cema branch `roh/use-go-styl`). Blocked by N-025…N-030
+  (N-002 mixed syntax, N-023 @require and N-024 multi-line selectors are closed). With every gap patched around in a
   scratch copy, the remaining diffs were all go-styl bugs listed here, plus
   cema-side source quirks that
   cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
   `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
-- **N-024** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
-  Multi-line selector groups. (a) A trailing-comma continuation (`.a,` then
-  `.b` on the next line) is a parse error, even at the top level. (b) Stacked
-  selector lines sharing one block (`&:after` then `&:before`) are a parse
-  error, or are **silently misparsed**: `td:nth-child(1)` over
-  `td:nth-child(2)` becomes the declaration `td: nth-child(1)`.
 - **N-025** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   A trailing parent reference (`.checkbox &`) is emitted literally
   (`.x .a .checkbox &`) instead of `.checkbox .x .a`. Silent wrong CSS.
@@ -142,6 +136,10 @@ session's attempt to compile cema's stylesheets with go-styl.
   `payment_form()`) is an error in go-styl but silently dropped by Stylus.
   The error found three dead lines in cema, so keeping it seems right; record
   it as a deliberate divergence in `difftest/known_diffs.txt` and the README.
+- **N-035** · raised `2026-0927-1357-go-styl-multiline-selectors` · value low
+  A nested selector that starts with a pseudo-class joins its parent without
+  a space: `.x` over `:hover` gives `.x:hover`, while Stylus gives
+  `.x :hover` (a descendant). Found while probing N-024.
 
 ## Roadmap
 
@@ -181,6 +179,17 @@ are recorded in the session docs.
   Stylus's requireHistory. Tests in `require_test.go` match stylus 0.64. The one
   known difference: a literal `.css` require passes through, while Stylus
   fails if the `.css` file doesn't exist.
+
+- **N-024** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1357-go-styl-multiline-selectors`
+  Multi-line selector groups. `buildTree` appends the next non-blank line to
+  a line that ends in a trailing comma, whatever that line's indentation (this
+  covers both syntaxes and multi-line value lists). `groupSelectorLines`
+  (`internal/parser/selgroup.go`) merges a run of selector-shaped leaf lines
+  into the ruleset line that ends the run, using line-level cues from Stylus's
+  `looksLikeSelector` (sigils, combinators, bare idents, `ident` + class/id/attr/
+  `::`/a known pseudo). A run with a declaration-shaped line is not merged.
+  Following Stylus, a bare ident over a selector block is a type selector,
+  not a mixin call. Tests in `multiline_selector_test.go` match stylus 0.64.
 
 - **N-032** · raised `2026-0624-1757-go-styl-m4-m5` · closed 2026-09-27, `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat`
   Unquoted `url(/path.ext)` tripping the value lexer. Verified fixed:
