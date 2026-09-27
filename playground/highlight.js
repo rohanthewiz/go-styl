@@ -6,6 +6,7 @@
 //   stylHi.escape(s)          -> HTML-escaped string
 //   stylHi.editor(ta, code)   -> wires a <textarea> to its overlay <code>;
 //                                returns a repaint function
+//   stylHi.errorMark(ta)      -> marks a compile error's line in that editor
 //
 // The Stylus tokenizer is a per-line scanner with one piece of context: a line
 // whose next non-blank line is indented deeper (or that ends in `{` or `,`)
@@ -214,7 +215,70 @@ function editor(ta, code, enabled) {
   return () => { paint(); sync(); };
 }
 
-const api = { styl, css, escape: esc, editor };
+// --- error marker ------------------------------------------------------------
+// errorMark(ta) marks a compile error's line in an overlay editor: a tinted
+// band across the line with a bar at the left edge (the host styles
+// `.errband`), kept aligned as the textarea scrolls. The band is inserted
+// just before the textarea, so it paints above the highlighted <pre> and
+// below the (transparent) textarea text.
+//
+//   const mark = stylHi.errorMark(ta);
+//   mark.show(line, col)  // 1-based; col may be 0/undefined
+//   mark.clear()
+//   mark.fromResult(r)    // show() for an error in this source, else clear()
+//   mark.jump()           // focus the textarea with the caret at line:col
+function errorMark(ta) {
+  const band = document.createElement('div');
+  band.className = 'errband';
+  band.hidden = true;
+  ta.parentElement.insertBefore(band, ta);
+  let line = 0, col = 0;
+
+  const place = () => {
+    if (!line) return;
+    const cs = getComputedStyle(ta);
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
+    band.style.top = (parseFloat(cs.paddingTop) + (line - 1) * lh - ta.scrollTop) + 'px';
+    band.style.height = lh + 'px';
+  };
+  ta.addEventListener('scroll', place);
+
+  return {
+    show(l, c) {
+      line = l > 0 ? l : 0;
+      col = c > 0 ? c : 0;
+      band.hidden = !line;
+      place();
+    },
+    clear() { line = 0; band.hidden = true; },
+    // fromResult marks a compile result's error when it points into the
+    // editor's own source (the WASM side compiles it as playground.styl; an
+    // error inside another file has no line here). Returns whether it did.
+    fromResult(r) {
+      const here = r.error !== undefined && r.line > 0 &&
+        (!r.file || r.file === '<input>' || /(^|\/)playground\.styl$/.test(r.file));
+      if (here) this.show(r.line, r.col); else this.clear();
+      return here;
+    },
+    jump() {
+      if (!line) return;
+      // Offset of line:col in the text; clamp to the line's end.
+      const lines = ta.value.split('\n');
+      let pos = 0;
+      for (let i = 0; i < line - 1 && i < lines.length; i++) pos += lines[i].length + 1;
+      const len = (lines[line - 1] || '').length;
+      pos += Math.min(Math.max(col - 1, 0), len);
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+      // Scroll the error line to about a third of the way down.
+      const lh = parseFloat(getComputedStyle(ta).lineHeight) || 19.5;
+      ta.scrollTop = Math.max(0, (line - 1) * lh - ta.clientHeight / 3);
+      place();
+    },
+  };
+}
+
+const api = { styl, css, escape: esc, editor, errorMark };
 if (typeof window !== 'undefined') window.stylHi = api;
 if (typeof module !== 'undefined') module.exports = api;
 })();

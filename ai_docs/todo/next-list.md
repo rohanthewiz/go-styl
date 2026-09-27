@@ -29,7 +29,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-039
+**Next ID:** N-040
 
 ## Open
 
@@ -65,12 +65,13 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-015** · raised `2026-0706-1146-m15-critical-css-and-rweb-middleware` · value low
   net/http critical-CSS adapter: a `stylhttp` twin of rweb's
   `middleware/critical`, on top of `stylcrit`.
-- **N-016** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
-  Playground: mark compile errors in the editor gutter from the result's
-  `line`/`col`.
 - **N-019** · raised `2026-0706-1250-playground-highlighting-tutorial` · value low
   A Go highlighter for `go` blocks in tutorial prose (currently escaped plain
   text).
+- **N-039** · raised `2026-0927-1658-go-styl-playground-error-marks` · value low
+  An expression that ends early reports `unexpected "" in expression`
+  (the EOF token's empty text), e.g. `width 1px +`. It should say
+  "unexpected end of expression".
 
 ## Roadmap
 
@@ -99,6 +100,14 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-016** · raised `2026-0706-1250-playground-highlighting-tutorial` · closed 2026-09-27, `2026-0927-1658-go-styl-playground-error-marks`
+  Compile errors marked in the editor. The overlay editor has no gutter, so
+  `stylHi.errorMark(ta)` draws a tinted band with a left-edge bar on the
+  error line, kept aligned on scroll. Clicking the error message jumps the
+  caret to line:col. Works in both the playground and the tutorial editor;
+  only errors in the editor's own source (`playground.styl`) are marked.
+  Browser-verified.
 
 - **N-017** · raised `2026-0706-1250-playground-highlighting-tutorial` · closed 2026-09-27, `2026-0927-1655-go-styl-playground-share-links`
   Shareable playground URLs. A **share** button encodes the source, globals

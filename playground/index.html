@@ -142,6 +142,12 @@
     font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     white-space: pre; overflow: auto; tab-size: 2; outline: none;
   }
+  .editor .errband {
+    position: absolute; left: 0; right: 0; pointer-events: none;
+    background: rgba(229, 62, 62, .13); border-left: 3px solid #e53e3e;
+  }
+  pre.err.jumpable { cursor: pointer; }
+  pre.err.jumpable:hover { text-decoration: underline dotted; }
   pre.err {
     display: none; margin: 0; padding: .6rem .9rem;
     background: var(--err-bg); color: var(--err-fg);
@@ -381,6 +387,10 @@ button(bg = primary)
   const hlOn = () => hlBox.checked;
   document.body.classList.toggle('nohl', !hlOn());
   const repaintSrc = stylHi.editor(src, $('srcHl'), hlOn);
+  const srcMark = stylHi.errorMark(src);
+  // An error in the input (not an imported file) marks its line; clicking
+  // the message jumps the caret there.
+  errBox.addEventListener('click', () => srcMark.jump());
   let lastCSS = '';
   function renderOut() {
     if (hlOn()) out.innerHTML = stylHi.css(lastCSS);
@@ -468,12 +478,16 @@ button(bg = primary)
       if (r.error !== undefined) {
         errBox.textContent = r.error;
         errBox.style.display = 'block';
+        const here = srcMark.fromResult(r);
+        errBox.classList.toggle('jumpable', here);
+        errBox.title = here ? 'click to jump to line ' + r.line : '';
         $('outstat').textContent = '';
         $('outstat').className = 'stat';
         out.style.opacity = '0.45';
         return;
       }
       errBox.style.display = 'none';
+      srcMark.clear();
       out.style.opacity = '';
       lastCSS = r.css;
       renderOut();

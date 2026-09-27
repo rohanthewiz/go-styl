@@ -1202,6 +1202,8 @@ function init(opts) {
 
   const hlOn = () => !document.body.classList.contains('nohl');
   const repaint = stylHi.editor(ta, hlCode, hlOn);
+  const mark = stylHi.errorMark(ta);
+  errEl.addEventListener('click', () => mark.jump());
 
   function saveDone() { store.write('go-styl-tut-done', JSON.stringify([...done])); }
 
@@ -1275,9 +1277,11 @@ function init(opts) {
       if (r.error !== undefined) {
         errEl.textContent = r.error;
         errEl.style.display = 'block';
+        errEl.classList.toggle('jumpable', mark.fromResult(r));
         outEl.style.opacity = '0.45';
       } else {
         errEl.style.display = 'none';
+        mark.clear();
         outEl.style.opacity = '';
         lastCSS = r.css;
         renderOut();
