@@ -109,15 +109,12 @@ session's attempt to compile cema's stylesheets with go-styl.
 - **N-022** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Compile cema's `styles/styl` (`master.styl` + six `theme_masters`) with
   zero semantic diff against stylus 0.64, so cema can drop the `stylus` npm
-  dependency (cema branch `roh/use-go-styl`). Blocked by N-025…N-030
-  (N-002 mixed syntax, N-023 @require and N-024 multi-line selectors are closed). With every gap patched around in a
+  dependency (cema branch `roh/use-go-styl`). Blocked by N-026…N-030
+  (N-002 mixed syntax, N-023 @require, N-024 multi-line selectors and N-025 trailing `&` are closed). With every gap patched around in a
   scratch copy, the remaining diffs were all go-styl bugs listed here, plus
   cema-side source quirks that
   cema must fix itself (a column-0 `.form-help {` in `_material_form.styl`,
   `/* */` inside `//` comments in `_banner.styl`, and three dead mixin calls).
-- **N-025** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
-  A trailing parent reference (`.checkbox &`) is emitted literally
-  (`.x .a .checkbox &`) instead of `.checkbox .x .a`. Silent wrong CSS.
 - **N-026** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · value medium
   Backslash escapes in strings are dropped: `content "\2022"` outputs
   `"2022"`, so the page shows the text instead of a bullet. Silent wrong CSS.
@@ -179,6 +176,15 @@ are recorded in the session docs.
   Stylus's requireHistory. Tests in `require_test.go` match stylus 0.64. The one
   known difference: a literal `.css` require passes through, while Stylus
   fails if the `.css` file doesn't exist.
+
+- **N-025** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1423-go-styl-trailing-parent-ref`
+  A parent reference anywhere in a selector. `combine` (`internal/eval/selector.go`)
+  replaces every `&` in the child with the parent and prepends nothing
+  (`.checkbox &` → `.checkbox .x .a`, `& + &`, `:not(&)`). At the top level
+  `&` resolves to nothing (`& .a` → `.a`). As in Stylus, the substitution is
+  textual, even inside attribute strings. Tests in `parent_ref_test.go` match
+  stylus 0.64. One known difference: a top-level selector that is only `&`
+  still prints `&{…}`, where Stylus drops the rule.
 
 - **N-024** · raised `2026-0927-1300-go-styl-mixed-syntax-and-cema-compat` · closed 2026-09-27, `2026-0927-1357-go-styl-multiline-selectors`
   Multi-line selector groups. `buildTree` appends the next non-blank line to
