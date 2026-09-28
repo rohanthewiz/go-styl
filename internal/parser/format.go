@@ -24,6 +24,9 @@ import (
 //   - trailing whitespace goes, blank-line runs collapse to one, leading and
 //     trailing blank lines go, and the file ends in exactly one newline
 //   - comments are kept, re-indented with the code around them
+//   - statements are respelled one rule per kind (respell.go): `prop: value`
+//     spacing and one declaration form per file, ` = ` in assignments and
+//     parameter defaults, `, ` in values
 //
 // Safety. Whatever the rewrite does, the result is parsed and its AST compared
 // with the original's (positions ignored). A mismatch means the re-indent
@@ -34,9 +37,9 @@ import (
 //
 //	src ──Parse──▶ AST₀
 //	 │
-//	 ├─ tidy ──▶ reindent ──Parse──▶ AST₁ ── AST₁ ≡ AST₀ ? ──yes──▶ result
+//	 ├─ tidy ──▶ reindent ──Parse──▶ AST₁ ── AST₁ ≡ AST₀ ? ──yes──▶ respell ─▶ result
 //	 │                                              │ no
-//	 └─ tidy ─────────────────Parse──▶ AST₂ ── AST₂ ≡ AST₀ ? ──yes──▶ result
+//	 └─ tidy ─────────────────Parse──▶ AST₂ ── AST₂ ≡ AST₀ ? ──yes──▶ respell ─▶ result
 //	                                                │ no
 //	                                                ▼
 //	                                         ErrFormatUnsafe
@@ -51,7 +54,9 @@ func Format(src string) (string, error) {
 	for _, cand := range []string{reindent(tidied), tidied} {
 		sheet, err := Parse(cand)
 		if err == nil && sameAST(orig, sheet) {
-			return cand, nil
+			// Statement spelling (respell.go) runs on whichever layout
+			// passed, with its own per-line guard.
+			return respellSafe(cand, orig), nil
 		}
 	}
 	return "", ErrFormatUnsafe
@@ -76,7 +81,10 @@ func tidy(src string) string {
 	blank := false
 	for _, l := range lines {
 		l = strings.TrimRight(l, " \t\r")
-		if l == "" {
+		// Blank by classifyLines' test (TrimSpace), so a line of other
+		// whitespace (`\f`) isn't kept here and then emptied by reindent,
+		// which would take a second run to settle.
+		if strings.TrimSpace(l) == "" {
 			blank = len(out) > 0 // never keep a leading blank line
 			continue
 		}
@@ -358,31 +366,56 @@ func relativeIndent(lines []fmtLine, i int) int {
 // Brace events come from scanStructural, the same scanner bracesToIndent
 // runs, so interpolation and object-literal braces are never counted.
 func indentBraces(lines []fmtLine, src string) {
-	type event struct {
-		line int
-		open bool
+	events := braceEvents(src)
+
+	// Outside all braces, a line's depth comes from its source indentation
+	// by bracesToIndent's rule: pop entries at least as indented, then sit
+	// one level below the top, or level with it when the top is a header
+	// whose block was braced (it never adopts indentation children).
+	type entry struct {
+		old, depth int
+		braced     bool
 	}
-	var events []event
-	line := 0
-	scanStructural([]rune(src), scanHandlers{
-		text:    func(s string) { line += strings.Count(s, "\n") },
-		interp:  func(s string) { line += strings.Count(s, "\n") },
-		open:    func() { events = append(events, event{line, true}) },
-		close:   func() { events = append(events, event{line, false}) },
-		newline: func() { line++ },
-		skip:    func(n int) { line += n },
-	})
+	var stack []entry
+	outside := func(ind int, push bool) int {
+		s := stack
+		for len(s) > 0 && s[len(s)-1].old >= ind {
+			s = s[:len(s)-1]
+		}
+		d := 0
+		if n := len(s); n > 0 {
+			d = s[n-1].depth
+			if !s[n-1].braced {
+				d++
+			}
+		}
+		if push {
+			stack = append(s, entry{old: ind, depth: d})
+		}
+		return d
+	}
+	lastOutside := -1 // stack index of the last outside line placed, if on top
 
 	var headers []int // output indentation of each open block's header
 	ev := 0
 	for i := range lines {
 		l := &lines[i]
-		_, text := splitIndent(l.raw)
+		// All whitespace, not just splitIndent's: a `\r}` line closes a
+		// block like `}` does, and collapseSpaces drops that `\r`.
+		text := strings.TrimSpace(l.raw)
+		atTop := len(headers) == 0
 		switch l.kind {
 		case lkContent, lkComment:
 			switch {
-			case len(headers) == 0:
-				l.newInd = l.oldInd
+			case atTop && l.kind == lkContent && strings.HasPrefix(text, "{") && lastOutside >= 0:
+				// A `{` on its own line opens the previous statement's
+				// block and sits at that header's level.
+				l.newInd = stack[lastOutside].depth * indentUnit
+			case atTop && l.kind == lkContent:
+				l.newInd = outside(l.oldInd, true) * indentUnit
+				lastOutside = len(stack) - 1
+			case atTop:
+				l.newInd = outside(l.oldInd, false) * indentUnit
 			case strings.HasPrefix(text, "}"):
 				l.newInd = headers[len(headers)-1]
 			default:
@@ -390,6 +423,15 @@ func indentBraces(lines []fmtLine, src string) {
 			}
 		case lkObjCont, lkCommaCont:
 			l.newInd = relativeIndent(lines, i)
+		case lkVerbatim:
+			// Unmoved; outside braces it still enters the stack at the
+			// indentation the parser measures (after its leading comment).
+			l.newInd = l.oldInd
+			if atTop {
+				ind, _ := splitIndent(l.clean)
+				outside(ind, true)
+				lastOutside = len(stack) - 1
+			}
 		default:
 			l.newInd = l.oldInd
 		}
@@ -399,6 +441,9 @@ func indentBraces(lines []fmtLine, src string) {
 		// opened (and not closed) earlier on the same line.
 		openedHere := 0
 		for ; ev < len(events) && events[ev].line == i; ev++ {
+			if events[ev].open && len(headers) == 0 && lastOutside >= 0 && lastOutside < len(stack) {
+				stack[lastOutside].braced = true
+			}
 			if events[ev].open {
 				headers = append(headers, l.newInd+openedHere*indentUnit)
 				openedHere++
@@ -412,6 +457,48 @@ func indentBraces(lines []fmtLine, src string) {
 			}
 		}
 	}
+}
+
+// braceEvent is a structural `{` (open) or `}` on a 0-based source line.
+type braceEvent struct {
+	line int
+	open bool
+}
+
+// braceEvents lists src's block braces in order. They come from
+// scanStructural, the same scanner bracesToIndent runs, so interpolation and
+// object-literal braces are never counted.
+func braceEvents(src string) []braceEvent {
+	var events []braceEvent
+	line := 0
+	scanStructural([]rune(src), scanHandlers{
+		text:    func(s string) { line += strings.Count(s, "\n") },
+		interp:  func(s string) { line += strings.Count(s, "\n") },
+		open:    func() { events = append(events, braceEvent{line, true}) },
+		close:   func() { events = append(events, braceEvent{line, false}) },
+		newline: func() { line++ },
+		skip:    func(n int) { line += n },
+	})
+	return events
+}
+
+// braceLineStarts reports, for each of n lines, whether the line begins
+// inside a brace block.
+func braceLineStarts(src string, n int) []bool {
+	out := make([]bool, n)
+	depth, ev := 0, 0
+	events := braceEvents(src)
+	for i := 0; i < n; i++ {
+		out[i] = depth > 0
+		for ; ev < len(events) && events[ev].line == i; ev++ {
+			if events[ev].open {
+				depth++
+			} else if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return out
 }
 
 // shiftBlockComments moves the continuation lines of each multi-line /* */
@@ -459,7 +546,13 @@ func collapseSpaces(s string) string {
 			continue
 		}
 		if space {
-			b.WriteByte(' ')
+			// Whitespace the indentation split left at the start (a lone
+			// `\r`, which splitIndent doesn't count as indentation) is
+			// dropped: written as a space, the next run would read it as
+			// indentation, and fmt wouldn't be idempotent.
+			if b.Len() > 0 {
+				b.WriteByte(' ')
+			}
 			space = false
 		}
 		if c == '"' || c == '\'' {

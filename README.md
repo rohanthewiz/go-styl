@@ -556,7 +556,8 @@ exactly what `Compile` declares.
 
 ## Formatting (`styl fmt`)
 
-`styl fmt` gives Stylus a gofmt. It rewrites whitespace and nothing else:
+`styl fmt` gives Stylus a gofmt. It rewrites layout and spelling, never
+meaning:
 
 - indentation becomes two spaces per nesting level; brace syntax gets its
   level from the braces
@@ -565,6 +566,14 @@ exactly what `Compile` declares.
 - trailing whitespace goes, blank-line runs collapse to one, and the file
   ends in exactly one newline
 - comments stay, re-indented with the code around them
+- declarations are spelled one way per file: `prop: value` inside braces,
+  and in indentation syntax whichever of `prop value` / `prop: value` most
+  of the file already uses (a tie leaves each as written); `color:red`
+  becomes `color: red`
+- assignments and parameter defaults get ` = ` / ` ?= ` (`x=1` → `x = 1`,
+  `m(a=1)` → `m(a = 1)`)
+- commas in values get one space after and none before (`f(1 ,2)` →
+  `f(1, 2)`); selectors, strings and `url()` are left alone
 
 ```shell
 go run ./cmd/styl fmt app.styl          # formatted source to stdout
@@ -583,7 +592,12 @@ parse error is reported instead.
 A continuation line (after a trailing comma, or inside a multi-line object
 literal) keeps its offset from the first line of its statement, so
 hand-aligned value lists stay aligned. In a mixed-syntax file, lines outside
-every brace keep their indentation, because that indentation is structural.
+every brace are re-indented by the same depth rule the parser applies to
+them (a braced block never adopts indented children, so a line indented
+under one lines up with it).
+
+Each respelled line is checked the same way: if a change would alter the
+stylesheet, only that line keeps its old spelling.
 
 Library: `styl.Format(src)`.
 
