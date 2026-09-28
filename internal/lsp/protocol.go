@@ -70,13 +70,19 @@ type DocumentParams struct {
 const (
 	SeverityError   = 1
 	SeverityWarning = 2
+	SeverityHint    = 4
 )
+
+// tagUnnecessary (DiagnosticTag) asks the client to fade the range, as for
+// unused code.
+const tagUnnecessary = 1
 
 type Diagnostic struct {
 	Range    Range  `json:"range"`
 	Severity int    `json:"severity"`
 	Source   string `json:"source"`
 	Message  string `json:"message"`
+	Tags     []int  `json:"tags,omitempty"`
 }
 
 type PublishDiagnosticsParams struct {
@@ -98,6 +104,7 @@ type Hover struct {
 // Completion item kinds (CompletionItemKind).
 const (
 	kindFunction = 3
+	kindProperty = 10
 	kindVariable = 6
 	kindKeyword  = 14
 	kindColor    = 16
@@ -135,6 +142,37 @@ type DocumentSymbol struct {
 type TextEdit struct {
 	Range   Range  `json:"range"`
 	NewText string `json:"newText"`
+}
+
+type ParameterInformation struct {
+	Label string `json:"label"` // a substring of the signature's label
+}
+
+type SignatureInformation struct {
+	Label      string                 `json:"label"`
+	Parameters []ParameterInformation `json:"parameters"`
+}
+
+type SignatureHelp struct {
+	Signatures      []SignatureInformation `json:"signatures"`
+	ActiveSignature int                    `json:"activeSignature"`
+	ActiveParameter int                    `json:"activeParameter"`
+}
+
+type WorkspaceEdit struct {
+	Changes map[string][]TextEdit `json:"changes"`
+}
+
+type ReferenceParams struct {
+	TextDocumentPositionParams
+	Context struct {
+		IncludeDeclaration bool `json:"includeDeclaration"`
+	} `json:"context"`
+}
+
+type RenameParams struct {
+	TextDocumentPositionParams
+	NewName string `json:"newName"`
 }
 
 type Color struct {

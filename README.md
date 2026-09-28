@@ -603,11 +603,25 @@ It provides:
   line. `warn()` output shows as warnings.
 - **Completion** of variables and mixins, including those from imported
   files, plus built-ins and keywords. A root variable's detail is its
-  computed value.
+  computed value. Where a property name goes (an indented line, or after
+  `{`/`;`), CSS property names are offered too.
 - **Hover** showing a variable's definition and its computed value
   (`gap = pad * 3` → `12px`), or a mixin's signature.
 - **Go to definition** across `@import`/`@require`. Lookup is scope-aware,
   so a local or a parameter shadows a global.
+- **Find references** and **rename** across every file of the compile.
+  Imported files share the importer's root scope, so a variable a partial
+  reads from another partial is found too. A local is its own symbol;
+  every root-level assignment of a name is the same variable. A property
+  that names a mixin (a transparent mixin call) counts as a use.
+- **Signature help** for your mixins and functions while arguments are
+  typed.
+- **Lint**: unused local variables, unused local functions, unused root
+  mixins in an entry sheet (not in a `_partial` or a file another open
+  document imports), and a property set twice in one block. The fallback
+  idiom (`display -webkit-box` then `display flex`) is allowed. Root
+  variables are never flagged, because `styl gen` and custom properties
+  make them public.
 - **Document symbols** (the outline): selectors, at-rules, mixins and
   variables.
 - **Color swatches** for hex literals, with a color picker that writes hex
@@ -618,6 +632,9 @@ Each analysis compiles in a [`Sandbox`](#untrusted-themes-sandbox) with a
 1s budget, so a half-typed `for` over a huge range is cut off with a
 warning instead of hanging the editor. While the text doesn't parse,
 completion, hover and definition keep working from the last good parse.
+Imports are compiled from the editor's text of any open file, so an
+unsaved edit to a partial updates the importer's diagnostics and hover
+values right away. Closing it without saving reverts them to the disk text.
 
 Point any LSP client at it for `*.styl`. Neovim:
 
@@ -969,7 +986,8 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] `styl migrate`: Stylus → modern CSS (native nesting, `:root` custom properties,
   `calc()`, review notes for everything resolved at migrate time)
 - [x] `styl fmt` (`styl.Format`) and `styl-lsp`, a language server: diagnostics, completion,
-  hover with computed values, go-to-definition across imports, symbols, color swatches
+  hover with computed values, go-to-definition, references and rename across imports,
+  signature help, lint, symbols, color swatches
 - [ ] Future: value-level source mapping, deeper compress parity, more built-ins
 
 ## License

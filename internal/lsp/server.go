@@ -159,6 +159,30 @@ func (s *Server) dispatch(m *message) (any, *rpcError) {
 		return withPos(s, m, s.completion)
 	case "textDocument/definition":
 		return withPos(s, m, s.definition)
+	case "textDocument/signatureHelp":
+		return withPos(s, m, s.signatureHelp)
+	case "textDocument/prepareRename":
+		return withPos(s, m, s.prepareRename)
+	case "textDocument/references":
+		var p ReferenceParams
+		if err := unmarshal(m.Params, &p); err != nil {
+			return nil, err
+		}
+		d := s.docs[p.TextDocument.URI]
+		if d == nil {
+			return nil, nil
+		}
+		return s.referencesReq(d, p.Position, p.Context.IncludeDeclaration)
+	case "textDocument/rename":
+		var p RenameParams
+		if err := unmarshal(m.Params, &p); err != nil {
+			return nil, err
+		}
+		d := s.docs[p.TextDocument.URI]
+		if d == nil {
+			return nil, nil
+		}
+		return s.rename(d, p.Position, p.NewName)
 	case "textDocument/documentSymbol":
 		return withDoc(s, m, func(d *document) (any, *rpcError) { return s.symbols(d), nil })
 	case "textDocument/formatting":
@@ -226,6 +250,9 @@ func (s *Server) initialize() any {
 			"hoverProvider":              true,
 			"completionProvider":         map[string]any{"triggerCharacters": []string{"$"}},
 			"definitionProvider":         true,
+			"referencesProvider":         true,
+			"renameProvider":             map[string]any{"prepareProvider": true},
+			"signatureHelpProvider":      map[string]any{"triggerCharacters": []string{"(", ","}},
 			"documentSymbolProvider":     true,
 			"documentFormattingProvider": true,
 			"colorProvider":              true,
@@ -247,17 +274,22 @@ func (s *Server) update(d *document, text string) {
 // (directly or through other files; an analysis's deps are transitive, so
 // one pass is enough and nothing cascades).
 func (s *Server) refreshDependents(d *document) {
-	if d.path == "" {
-		return
-	}
-	key := absPath(d.path)
 	for _, o := range s.docs {
-		// A document mid-edit that doesn't parse has no deps of its own; its
-		// last good analysis says what it imports.
-		if o != d && (o.an != nil && o.an.deps[key] || o.lastGood != nil && o.lastGood.deps[key]) {
+		if o != d && dependsOn(o, d) {
 			s.refresh(o)
 		}
 	}
+}
+
+// dependsOn reports whether o's last compile read d's file. A document
+// mid-edit that doesn't parse has no deps of its own, so its last good
+// analysis says what it imports.
+func dependsOn(o, d *document) bool {
+	if d.path == "" {
+		return false
+	}
+	key := absPath(d.path)
+	return o.an != nil && o.an.deps[key] || o.lastGood != nil && o.lastGood.deps[key]
 }
 
 // openFiles maps the absolute path of every open file-backed document to
@@ -272,10 +304,21 @@ func (s *Server) openFiles() map[string]string {
 	return out
 }
 
+// importedByOpen reports whether another open document's last compile read
+// d, which makes d a partial for the linter.
+func (s *Server) importedByOpen(d *document) bool {
+	for _, o := range s.docs {
+		if o != d && dependsOn(o, d) {
+			return true
+		}
+	}
+	return false
+}
+
 // refresh re-analyzes a document's current text and publishes its
 // diagnostics.
 func (s *Server) refresh(d *document) {
-	d.an = analyze(d.path, d.text, s.openFiles())
+	d.an = analyze(d.path, d.text, s.openFiles(), s.importedByOpen(d))
 	if d.an.sheet != nil {
 		d.lastGood = d.an
 	}
@@ -416,8 +459,9 @@ var keywords = []string{"if", "else", "unless", "for", "in", "return", "true", "
 
 // completion offers every name in reach: the document's and its imports'
 // variables and functions (a root variable's detail is its computed value),
-// the built-ins, and the keywords. Clients filter by the typed prefix
-// themselves, so the list isn't pre-filtered.
+// the built-ins, and the keywords; at a property position (see
+// atPropertyPosition) the CSS property names come first. Clients filter by
+// the typed prefix themselves, so the list isn't pre-filtered.
 func (s *Server) completion(d *document, pos Position) (any, *rpcError) {
 	var items []CompletionItem
 	seen := map[string]bool{}
@@ -426,6 +470,11 @@ func (s *Server) completion(d *document, pos Position) (any, *rpcError) {
 		if !seen[key] {
 			seen[key] = true
 			items = append(items, it)
+		}
+	}
+	if atPropertyPosition(d, pos) {
+		for _, p := range cssProperties {
+			add(CompletionItem{Label: p, Kind: kindProperty})
 		}
 	}
 	if an := d.index(); an != nil {

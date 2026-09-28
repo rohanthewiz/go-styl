@@ -6,10 +6,11 @@
 //	go install github.com/rohanthewiz/go-styl/cmd/styl-lsp@latest
 //
 // It provides diagnostics as you type (the real compile's errors, with
-// did-you-mean hints), completion for variables, mixins and built-ins, hover
-// with a variable's computed value, go-to-definition across @import,
-// document symbols, color swatches with a picker, and formatting (the same
-// output as `styl fmt`).
+// did-you-mean hints, plus lint for unused locals and duplicate properties),
+// completion for variables, mixins, built-ins and CSS properties, hover with
+// a variable's computed value, go-to-definition, references and rename
+// across @import, signature help, document symbols, color swatches with a
+// picker, and formatting (the same output as `styl fmt`).
 //
 // Point an editor's generic LSP client at the binary for *.styl files, e.g.
 // Neovim:

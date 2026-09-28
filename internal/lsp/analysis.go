@@ -27,6 +27,7 @@ import (
 type analysis struct {
 	sheet *ast.Stylesheet   // nil when the text doesn't parse
 	defs  []def             // definitions in the document, then in its imports
+	uses  []use             // use sites in the document (see collectUses)
 	vars  map[string]string // computed root-scope variable values
 	diags []Diagnostic
 	// deps is the absolute OS paths of every file the compile read (the
@@ -44,6 +45,17 @@ const (
 	defFunc                // function/mixin definition
 )
 
+// defRole says how a definition binds its name; the linter treats them
+// differently (see lint).
+type defRole int
+
+const (
+	roleAssign defRole = iota // `x = …`
+	roleParam                 // a function/mixin parameter
+	roleLoop                  // a for-loop variable
+	roleFunc                  // a function/mixin definition
+)
+
 // def is one definition site.
 //
 // Scope. Stylus scopes variables lexically: function/mixin bodies and
@@ -54,11 +66,13 @@ const (
 type def struct {
 	Name     string
 	Kind     defKind
+	Role     defRole
 	File     string // absolute path; "" for an untitled document
 	Line     int    // 1-based line of the definition
 	Sig      string // source text of the defining line, for hover/completion
 	FromLine int    // scope span (1-based, inclusive); 0,0 means root scope
 	ToLine   int
+	BodyTo   int // a function's last body line (see lastLine); 0 otherwise
 }
 
 // root reports whether the def is at its file's top level.
@@ -78,7 +92,10 @@ const evalTimeout = time.Second
 // untitled buffer); open maps the absolute OS path of every open document to
 // its editor text, so both the definition index and the compile see unsaved
 // edits to imported files.
-func analyze(path, text string, open map[string]string) *analysis {
+//
+// imported says another open document imports this one, which makes it a
+// partial for the linter.
+func analyze(path, text string, open map[string]string, imported bool) *analysis {
 	a := &analysis{vars: map[string]string{}, deps: map[string]bool{}}
 	overlay := func(p string) (string, bool) {
 		t, ok := open[absPath(p)]
@@ -94,6 +111,23 @@ func analyze(path, text string, open map[string]string) *analysis {
 	a.sheet = sheet
 	a.defs = collectDefs(sheet.Statements, path, lines)
 	a.defs = append(a.defs, importedDefs(sheet, path, overlay)...)
+	a.uses = collectUses(sheet.Statements, lines)
+	defer func() {
+		// After the compile's diagnostics, so problems come before hints.
+		a.diags = append(a.diags, lint(a, path, lines, imported, func() []*fileIndex {
+			var out []*fileIndex
+			for _, f := range importClosure(sheet, path, overlay) {
+				text, ok := overlay(f)
+				if !ok {
+					text = readFile(f)
+				}
+				if fi := indexText(f, "", text); fi != nil {
+					out = append(out, fi)
+				}
+			}
+			return out
+		})...)
+	}()
 
 	// Evaluate in a sandbox over an os.DirFS at the filesystem root: the
 	// sandbox's step/time/value budgets need an fs.FS (it never touches the
@@ -292,10 +326,10 @@ func collectDefs(stmts []ast.Stmt, file string, lines []string) []def {
 			case *ast.Assignment:
 				out = append(out, def{Name: n.Name, Kind: defVar, File: file, Line: n.Line, Sig: sig(n.Line), FromLine: from, ToLine: to})
 			case *ast.FuncDef:
-				out = append(out, def{Name: n.Name, Kind: defFunc, File: file, Line: n.Line, Sig: sig(n.Line), FromLine: from, ToLine: to})
 				f, t := scope(n.Line, n.Body)
+				out = append(out, def{Name: n.Name, Kind: defFunc, Role: roleFunc, File: file, Line: n.Line, Sig: sig(n.Line), FromLine: from, ToLine: to, BodyTo: t})
 				for _, p := range n.Params {
-					out = append(out, def{Name: p.Name, Kind: defVar, File: file, Line: n.Line, Sig: "parameter of " + sig(n.Line), FromLine: f, ToLine: t})
+					out = append(out, def{Name: p.Name, Kind: defVar, Role: roleParam, File: file, Line: n.Line, Sig: "parameter of " + sig(n.Line), FromLine: f, ToLine: t})
 				}
 				walk(n.Body, f, t)
 			case *ast.RuleSet:
@@ -318,7 +352,7 @@ func collectDefs(stmts []ast.Stmt, file string, lines []string) []def {
 				f, t := scope(n.Line, n.Body)
 				for _, name := range []string{n.Value, n.Index} {
 					if name != "" {
-						out = append(out, def{Name: name, Kind: defVar, File: file, Line: n.Line, Sig: sig(n.Line), FromLine: f, ToLine: t})
+						out = append(out, def{Name: name, Kind: defVar, Role: roleLoop, File: file, Line: n.Line, Sig: sig(n.Line), FromLine: f, ToLine: t})
 					}
 				}
 				walk(n.Body, from, to)
@@ -378,48 +412,56 @@ func importedDefs(sheet *ast.Stylesheet, path string, overlay func(string) (stri
 	if path == "" {
 		return nil
 	}
-	seen := map[string]bool{}
-	if abs, err := filepath.Abs(path); err == nil {
-		seen[abs] = true
-	}
+	seen := map[string]bool{absPath(path): true}
 	var out []def
 	var visit func(stmts []ast.Stmt, dir string, depth int)
 	visit = func(stmts []ast.Stmt, dir string, depth int) {
 		if depth > maxImportDepth {
 			return
 		}
-		for _, imp := range imports(stmts) {
-			files, err := eval.ResolveImport(dir, imp.Path, nil)
-			if err != nil {
+		for _, f := range resolvedImports(stmts, dir) {
+			if seen[f] {
 				continue
 			}
-			for _, f := range files {
-				if seen[f] {
-					continue
-				}
-				seen[f] = true
-				text, ok := overlay(f)
-				if !ok {
-					data, err := os.ReadFile(f)
-					if err != nil {
-						continue
-					}
-					text = string(data)
-				}
-				sub, err := parser.Parse(text)
+			seen[f] = true
+			text, ok := overlay(f)
+			if !ok {
+				data, err := os.ReadFile(f)
 				if err != nil {
 					continue
 				}
-				for _, d := range collectDefs(sub.Statements, f, strings.Split(text, "\n")) {
-					if d.root() {
-						out = append(out, d)
-					}
-				}
-				visit(sub.Statements, filepath.Dir(f), depth+1)
+				text = string(data)
 			}
+			sub, err := parser.Parse(text)
+			if err != nil {
+				continue
+			}
+			for _, d := range collectDefs(sub.Statements, f, strings.Split(text, "\n")) {
+				if d.root() {
+					out = append(out, d)
+				}
+			}
+			visit(sub.Statements, filepath.Dir(f), depth+1)
 		}
 	}
 	visit(sheet.Statements, filepath.Dir(path), 0)
+	return out
+}
+
+// resolvedImports resolves the imports among stmts against dir to absolute
+// file paths, in statement order. Unresolvable ones are skipped (the
+// compile reports them).
+func resolvedImports(stmts []ast.Stmt, dir string) []string {
+	var out []string
+	for _, imp := range imports(stmts) {
+		files, err := eval.ResolveImport(dir, imp.Path, nil)
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			out = append(out, absPath(f))
+		}
+	}
 	return out
 }
 

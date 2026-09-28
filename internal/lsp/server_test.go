@@ -363,7 +363,7 @@ func TestOverlayFSUnsavedFile(t *testing.T) {
 	newFile := filepath.Join(dir, "_new.styl")
 	os.WriteFile(filepath.Join(dir, "_disk.styl"), []byte("d = 1px\n"), 0o644)
 	src := "@import '_new'\n@import '_disk'\n.a\n  width n + d\n"
-	an := analyze(main, src, map[string]string{newFile: "n = 2px\n", main: src})
+	an := analyze(main, src, map[string]string{newFile: "n = 2px\n", main: src}, false)
 	if len(an.diags) != 0 {
 		t.Fatalf("diags: %+v", an.diags)
 	}
