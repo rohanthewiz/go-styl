@@ -17,12 +17,14 @@ func runMigrate(args []string) {
 		outPath string
 		noNotes bool
 		noVars  bool
+		noComms bool
 		quiet   bool
 		globals = map[string]any{}
 	)
 	fs.StringVar(&outPath, "o", "", "write CSS to this file instead of stdout")
 	fs.BoolVar(&noNotes, "no-notes", false, "omit the inline /* styl-migrate: … */ review comments")
 	fs.BoolVar(&noVars, "no-vars", false, "inline all variables instead of emitting custom properties")
+	fs.BoolVar(&noComms, "no-comments", false, "drop the source's comments instead of carrying them into the CSS")
 	fs.BoolVar(&quiet, "q", false, "don't list the review notes on stderr")
 	fs.Func("D", "define a global variable as name=value (repeatable)", func(s string) error {
 		name, val, ok := strings.Cut(s, "=")
@@ -44,7 +46,7 @@ func runMigrate(args []string) {
 	}
 
 	res, err := styl.MigrateFile(fs.Arg(0), styl.Options{Globals: globals},
-		styl.MigrateOptions{NoNotes: noNotes, NoVars: noVars})
+		styl.MigrateOptions{NoNotes: noNotes, NoVars: noVars, NoComments: noComms})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

@@ -40,13 +40,14 @@
 // variables become custom properties on :root, and mixins, loops,
 // conditionals and @extend are resolved in place, each flagged with a
 // /* styl-migrate: … */ comment for review. The notes are also listed on
-// stderr.
+// stderr. The source's own comments are carried over (`//` as /* … */).
 //
 // migrate flags:
 //
 //	-o <file>     write the CSS to file instead of stdout
 //	-no-notes     omit the inline review comments
 //	-no-vars      inline all variables instead of emitting custom properties
+//	-no-comments  drop the source's comments
 //	-q            don't list the notes on stderr
 //	-D name=value define a global variable (repeatable), as above
 //

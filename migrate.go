@@ -15,6 +15,11 @@ type MigrateOptions struct {
 	// NoVars inlines every variable, as Compile does, instead of exposing
 	// root-level variables as CSS custom properties.
 	NoVars bool
+	// NoComments drops the source's comments. By default each one is
+	// carried to the matching place in the CSS, a `//` comment as
+	// `/* … */`; comments directly above a root variable move with it
+	// into :root.
+	NoComments bool
 }
 
 // MigrateNote marks a place where the migration made a judgment call that
@@ -61,6 +66,7 @@ type MigrateResult struct {
 //     each marked with a `/* styl-migrate: … */` comment
 //   - @extend adds the extending selectors to the target rule's list
 //   - .styl imports are inlined; CSS imports pass through
+//   - source comments are kept in place (see MigrateOptions.NoComments)
 //
 // Selectors CSS nesting can't express — `&` concatenation such as BEM
 // `&__elem`, or nesting under a pseudo-element — are written out in full
@@ -74,7 +80,11 @@ func Migrate(src string, opts Options, mo MigrateOptions) (MigrateResult, error)
 	if err != nil {
 		return MigrateResult{}, compileErr(err, opts.Filename)
 	}
-	sheet, err := parser.Parse(src)
+	parse := parser.ParseWithComments
+	if mo.NoComments {
+		parse = parser.Parse
+	}
+	sheet, err := parse(src)
 	if err != nil {
 		return MigrateResult{}, compileErr(err, opts.Filename)
 	}
@@ -89,8 +99,9 @@ func Migrate(src string, opts Options, mo MigrateOptions) (MigrateResult, error)
 			Warn:         opts.Warn,
 			Sandbox:      sb,
 		},
-		Notes:  !mo.NoNotes,
-		NoVars: mo.NoVars,
+		Notes:      !mo.NoNotes,
+		NoVars:     mo.NoVars,
+		NoComments: mo.NoComments,
 	})
 	if err != nil {
 		return MigrateResult{}, compileErr(err, opts.Filename)

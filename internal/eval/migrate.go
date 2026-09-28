@@ -59,6 +59,10 @@ type MigrateOptions struct {
 	// NoVars inlines every variable, as Compile does, instead of turning
 	// root-level variables into custom properties.
 	NoVars bool
+	// NoComments drops the source's own comments. Without it, a sheet
+	// parsed with parser.ParseWithComments has them carried into the CSS
+	// (see migrator.comment); .styl imports are parsed the same way.
+	NoComments bool
 }
 
 // MigrateNote marks a place where the migration made a judgment call that
@@ -84,10 +88,11 @@ type MigrateResult struct {
 type mKind int
 
 const (
-	mRule mKind = iota // a style rule: sels + kids
-	mAt                // a block at-rule: head + kids (also the root container)
-	mDecl              // a declaration: prop, val, important
-	mRaw               // a verbatim line (leaf at-rules, literal @import)
+	mRule    mKind = iota // a style rule: sels + kids
+	mAt                   // a block at-rule: head + kids (also the root container)
+	mDecl                 // a declaration: prop, val, important
+	mRaw                  // a verbatim line (leaf at-rules, literal @import)
+	mComment              // a source comment: head is its CSS text
 )
 
 // mnode is one node of the migrated output tree.
@@ -99,6 +104,13 @@ type mnode struct {
 	important bool     // mDecl
 	lead      []string // comments rendered on the lines before the node
 	kids      []*mnode
+
+	// mComment only: the source comment and its file, used to find the
+	// comments documenting a root variable (see walk). moved means the
+	// comment was copied into :root and is not rendered here.
+	src   *ast.Comment
+	file  string
+	moved bool
 
 	// @extend bookkeeping (mRule only). abs is the rule's fully combined
 	// selector list, what an @extend target is matched against. rootLevel
@@ -159,6 +171,17 @@ type migrator struct {
 	// computed from other properties (dark = darken(brand, 10%)).
 	frozenDefs map[*value.Var]MigrateNote
 	seen       map[MigrateNote]bool
+
+	// varDocs holds the comment nodes directly above a root variable's
+	// definition; rootRule moves them next to its custom property.
+	varDocs map[*value.Var][]*mnode
+	// firstVarKid is len(root.kids) when the first custom property was
+	// defined: leading root comments before that index (a file header)
+	// were written before any variable, so they stay above :root.
+	firstVarKid int
+	// muted > 0 while a loop runs its second and later iterations: a
+	// comment in a loop body is written once, not once per iteration.
+	muted int
 }
 
 // Migrate converts a parsed stylesheet to modern, nested CSS.
@@ -181,6 +204,7 @@ func Migrate(sheet *ast.Stylesheet, opts MigrateOptions) (MigrateResult, error) 
 		seen:       map[MigrateNote]bool{},
 		defs:       map[*value.Var]string{},
 		frozenDefs: map[*value.Var]MigrateNote{},
+		varDocs:    map[*value.Var][]*mnode{},
 	}
 	// Globals are seeded as plain values: they are migrate-time inputs,
 	// not part of the sheet, so they inline.
@@ -212,8 +236,17 @@ func (m *migrator) walk(stmts []ast.Stmt, mc *mctx) error {
 		if mc.ec.returned {
 			return nil
 		}
+		mark, nvars := len(mc.node.kids), len(m.vars)
 		if err := m.exec(stmt, mc); err != nil {
 			return err
+		}
+		switch s := stmt.(type) {
+		case *ast.Assignment:
+			if len(m.vars) > nvars {
+				m.adoptDocs(s, mc, mark, m.vars[len(m.vars)-1])
+			}
+		case *ast.FuncDef:
+			m.dropDocs(s, mc, mark)
 		}
 		if mc.node == m.root {
 			m.flush()
@@ -259,6 +292,9 @@ func (m *migrator) execInner(stmt ast.Stmt, mc *mctx) error {
 		return m.atRule(s, mc)
 	case *ast.Extend:
 		return m.extend(s, mc)
+	case *ast.Comment:
+		m.comment(s, mc)
+		return nil
 	case *ast.BlockSlot:
 		// The passed block is walked in place, so its rules nest in the
 		// slot's output node like the mixin body around it.
@@ -276,6 +312,105 @@ func (m *migrator) execInner(stmt ast.Stmt, mc *mctx) error {
 		m.drain(mc)
 		return nil
 	}
+}
+
+// comment writes a source comment where it stands. A `//` comment becomes
+// `/* … */`, since CSS has no line comments. Comments inside a mixin body
+// are written at every expansion (each one carries the code they
+// describe), but a loop body's only on the first iteration.
+func (m *migrator) comment(c *ast.Comment, mc *mctx) {
+	if m.opts.NoComments || m.muted > 0 {
+		return
+	}
+	mc.node.kids = append(mc.node.kids, &mnode{kind: mComment, head: cssComment(c), src: c, file: mc.ec.file})
+}
+
+// adoptDocs records the comments directly above a root variable's
+// definition (see docRun), so rootRule can move them next to its custom
+// property:
+//
+//	// Brand color        :root {
+//	primary = #c00    →     /* Brand color */
+//	                        --primary: #c00;
+func (m *migrator) adoptDocs(a *ast.Assignment, mc *mctx, mark int, v *value.Var) {
+	if start := m.docRun(a.Line, mc, mark); start < mark {
+		m.varDocs[v] = slices.Clone(mc.node.kids[start:mark])
+	}
+}
+
+// dropDocs removes the comments directly above a mixin or function
+// definition (see docRun). The definition isn't in the output, so its doc
+// comment would sit orphaned where it stood; each one dropped is noted
+// instead.
+func (m *migrator) dropDocs(d *ast.FuncDef, mc *mctx, mark int) {
+	start := m.docRun(d.Line, mc, mark)
+	if start == mark {
+		return
+	}
+	m.note(mc.ec, d.Line, d.Col, "comment",
+		fmt.Sprintf("dropped the comment on %s() with its definition (it is expanded where used)", d.Name))
+	mc.node.kids = append(mc.node.kids[:start], mc.node.kids[mark:]...)
+}
+
+// docRun returns where the comments documenting the statement on line
+// begin in mc.node.kids: the run of comment nodes just before mark (where
+// the statement's output would start; a definition emits none), in the
+// same file. It takes comments on the statement's own line (`x = 1 // why`),
+// then own-line comments each on the line right before the next. A blank
+// line or a comment belonging to another statement's line ends the run, so
+// a section header comment stays where it is. mark means no run.
+func (m *migrator) docRun(line int, mc *mctx, mark int) int {
+	next := line
+	start := mark
+	for start > 0 {
+		k := mc.node.kids[start-1]
+		if k.kind != mComment || k.file != mc.ec.file {
+			break
+		}
+		if k.src.Inline {
+			if k.src.Line != line && k.src.EndLine != line {
+				break
+			}
+		} else if k.src.EndLine+1 != next {
+			break
+		} else {
+			next = k.src.Line
+		}
+		start--
+	}
+	return start
+}
+
+// cssComment renders a source comment as CSS. A block comment keeps its
+// text; its continuation lines lose the source indentation of the line it
+// started on, so renderKids can re-indent them at the output depth.
+func cssComment(c *ast.Comment) string {
+	if !c.Block {
+		text := strings.TrimSpace(c.Text)
+		if text == "" {
+			return "/* */"
+		}
+		return "/* " + commentSafe(text) + " */"
+	}
+	lines := strings.Split(strings.ReplaceAll(c.Text, "\r\n", "\n"), "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = trimIndent(lines[i], c.Col-1)
+	}
+	return "/*" + strings.Join(lines, "\n") + "*/"
+}
+
+// trimIndent removes up to width columns of leading whitespace from s.
+func trimIndent(s string, width int) string {
+	i, w := 0, 0
+	for i < len(s) && w < width && (s[i] == ' ' || s[i] == '\t') {
+		if s[i] == '\t' {
+			w += 4
+		} else {
+			w++
+		}
+		i++
+	}
+	return s[i:]
 }
 
 // note records a MigrateNote at a statement's position. The same note at
@@ -364,6 +499,9 @@ func (m *migrator) assign(a *ast.Assignment, ec *execCtx) error {
 				}
 			}
 			m.varOf[a.Name] = w
+			if len(m.vars) == 0 {
+				m.firstVarKid = len(m.root.kids)
+			}
 			m.vars = append(m.vars, w)
 			v = w
 		}
@@ -895,6 +1033,8 @@ func (m *migrator) forStmt(s *ast.For, mc *mctx) error {
 	}
 	mark := len(mc.node.kids)
 	n := 0
+	// From the second iteration on, comments in the body are muted.
+	defer func(muted int) { m.muted = muted }(m.muted)
 	if h, ok := value.Deref(iter).(*value.Hash); ok {
 		keys := append([]string(nil), h.Keys()...)
 		for _, k := range keys {
@@ -910,6 +1050,9 @@ func (m *migrator) forStmt(s *ast.For, mc *mctx) error {
 			if ec.returned {
 				break
 			}
+			if n == 1 {
+				m.muted++
+			}
 		}
 	} else {
 		for idx, item := range iterItems(iter) {
@@ -923,6 +1066,9 @@ func (m *migrator) forStmt(s *ast.For, mc *mctx) error {
 			}
 			if ec.returned {
 				break
+			}
+			if n == 1 {
+				m.muted++
 			}
 		}
 	}
@@ -978,7 +1124,11 @@ func (m *migrator) importStmt(s *ast.Import, mc *mctx) error {
 		if err := m.ev.chargeSource(s.Path, len(data)); err != nil {
 			return err
 		}
-		sheet, err := parser.Parse(string(data))
+		parse := parser.ParseWithComments
+		if m.opts.NoComments {
+			parse = parser.Parse
+		}
+		sheet, err := parse(string(data))
 		if err != nil {
 			return diag.SetFile(err, abs)
 		}
@@ -1134,10 +1284,20 @@ func hasRuleKids(n *mnode) bool {
 func (m *migrator) render() string {
 	body := m.renderKids(m.root.kids, 0)
 	if rootRule := m.rootRule(body); rootRule != nil {
-		// @charset and @import must stay ahead of every rule.
+		// @charset and @import must stay ahead of every rule, and so does
+		// a header comment written before the first variable.
 		i := 0
-		for i < len(m.root.kids) && m.root.kids[i].kind == mRaw && isPreamble(m.root.kids[i].head) {
-			i++
+		for i < len(m.root.kids) {
+			k := m.root.kids[i]
+			if k.kind == mRaw && isPreamble(k.head) {
+				i++
+				continue
+			}
+			if k.kind == mComment && i < m.firstVarKid {
+				i++
+				continue
+			}
+			break
 		}
 		m.root.kids = slices.Insert(m.root.kids, i, rootRule)
 		body = m.renderKids(m.root.kids, 0)
@@ -1186,6 +1346,12 @@ func (m *migrator) rootRule(body string) *mnode {
 	rule := &mnode{kind: mRule, sels: []string{":root"}}
 	for _, v := range m.vars {
 		if used[v.Name] {
+			for _, doc := range m.varDocs[v] {
+				if !doc.moved {
+					doc.moved = true
+					rule.kids = append(rule.kids, &mnode{kind: mComment, head: doc.head})
+				}
+			}
 			node := &mnode{kind: mDecl, prop: "--" + v.Name, val: m.varDef(v)}
 			if fz, ok := m.frozenDefs[v]; ok {
 				n, first := m.note(&execCtx{file: fz.File}, fz.Line, fz.Col, fz.Kind, fz.Msg)
@@ -1226,6 +1392,8 @@ func (n *mnode) hasOutput() bool {
 	switch n.kind {
 	case mDecl:
 		return true
+	case mComment:
+		return !n.moved
 	case mRaw:
 		return strings.TrimSpace(n.head) != ""
 	case mRule:
@@ -1247,15 +1415,23 @@ func (m *migrator) renderKids(kids []*mnode, depth int) string {
 	var b strings.Builder
 	ind := strings.Repeat("  ", depth)
 	prevBlock := false
-	for _, k := range kids {
+	afterComment := false
+	gap := false // the last comment had a blank line after it in the source
+	for i, k := range kids {
 		if !k.hasOutput() {
 			continue
 		}
 		block := k.kind != mDecl
-		if b.Len() > 0 && (block || prevBlock) {
+		if k.kind == mComment {
+			// A comment is spaced like the node it sits above, and no
+			// blank line comes between them.
+			block = nextIsBlock(kids[i+1:])
+		}
+		if b.Len() > 0 && (gap || !afterComment && (block || prevBlock)) {
 			b.WriteString("\n")
 		}
-		prevBlock = block
+		prevBlock, afterComment = block, k.kind == mComment
+		gap = afterComment && k.src != nil && k.src.BlankAfter
 		for _, c := range k.lead {
 			b.WriteString(ind + "/* styl-migrate: " + commentSafe(c) + " */\n")
 		}
@@ -1266,8 +1442,12 @@ func (m *migrator) renderKids(kids []*mnode, depth int) string {
 				b.WriteString(" !important")
 			}
 			b.WriteString(";\n")
-		case mRaw:
+		case mRaw, mComment:
 			for _, line := range strings.Split(strings.TrimRight(k.head, "\n"), "\n") {
+				if line == "" && k.kind == mComment {
+					b.WriteString("\n") // a blank line inside a block comment
+					continue
+				}
 				b.WriteString(ind + line + "\n")
 			}
 		case mRule, mAt:
@@ -1281,6 +1461,18 @@ func (m *migrator) renderKids(kids []*mnode, depth int) string {
 		}
 	}
 	return b.String()
+}
+
+// nextIsBlock reports whether the first rendered non-comment node of kids
+// is a block (anything but a declaration). A comment run at the end of a
+// block counts as a declaration.
+func nextIsBlock(kids []*mnode) bool {
+	for _, k := range kids {
+		if k.hasOutput() && k.kind != mComment {
+			return k.kind != mDecl
+		}
+	}
+	return false
 }
 
 // commentSafe keeps note text from closing its comment early.

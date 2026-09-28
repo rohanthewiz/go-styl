@@ -409,6 +409,10 @@ func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 			return err
 		}
 		return ev.execBlock(body, child)
+	case *ast.Comment:
+		// Only ParseWithComments (the migration's parse) produces these;
+		// the evaluator reaches them in function bodies and ignores them.
+		return nil
 	default:
 		return fmt.Errorf("unsupported statement %T", stmt)
 	}

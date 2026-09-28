@@ -33,12 +33,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 
 ## Open
 
-- **N-043** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value medium
-  `styl migrate` drops source comments: `parser.stripComments` removes them
-  before lexing, so the AST never sees them. A migration that loses the
-  author's comments needs hand repair. Carrying `/* */` (and `//` as
-  `/* */`) through needs comment nodes in the AST, at least at statement
-  level.
 - **N-044** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value low
   `styl migrate` inlines `.styl` imports into one output. Migrating a
   multi-file project file-for-file needs partials that define only
@@ -94,6 +88,16 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-043** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · closed 2026-09-27, `2026-0927-2024-go-styl-n043-migrate-comments`
+  `styl migrate` keeps source comments. `parser.ParseWithComments` adds
+  `ast.Comment` statements (Parse is unchanged, so compile/fmt/LSP never see
+  them); comments attach to real lines as lead/trail, never as tree lines.
+  Migrate writes them in place (`//` as `/* */`), moves a root variable's
+  doc comments into `:root`, drops a mixin/function's doc comment with a
+  `comment` note, writes loop-body comments once. `-no-comments` /
+  `MigrateOptions.NoComments` opt out. Invariant test + `FuzzParseWithComments`:
+  minus comments the tree equals Parse's, and every comment appears once.
 
 - **N-041** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · closed 2026-09-27, `2026-0927-2007-go-styl-n041-block-mixins`
   User block mixins. `+m(args)` with an indented body passes the body to a

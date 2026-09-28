@@ -368,17 +368,23 @@ type cssBlock struct {
 }
 
 // parseCSS reads the line-oriented pretty CSS that Compile and Migrate
-// print (one declaration, header or brace per line). Comments are
-// dropped.
+// print (one declaration, header or brace per line). Comments, which
+// Migrate writes on lines of their own, are dropped (a multi-line one
+// whole).
 func parseCSS(t *testing.T, src string) *cssBlock {
 	t.Helper()
 	root := &cssBlock{}
 	stack := []*cssBlock{root}
+	inComment := false
 	for _, line := range strings.Split(src, "\n") {
 		line = strings.TrimSpace(line)
 		cur := stack[len(stack)-1]
+		if inComment || strings.HasPrefix(line, "/*") {
+			inComment = !strings.HasSuffix(line, "*/")
+			continue
+		}
 		switch {
-		case line == "" || strings.HasPrefix(line, "/*"):
+		case line == "":
 		case strings.HasSuffix(line, "{"):
 			b := &cssBlock{header: strings.TrimSpace(strings.TrimSuffix(line, "{"))}
 			cur.kids = append(cur.kids, b)
@@ -611,4 +617,149 @@ func (p *calcParser) atom() (float64, string) {
 		p.pos++
 	}
 	return n, p.s[us:p.pos]
+}
+
+// TestMigrateKeepsComments checks that source comments reach the CSS in
+// place: `//` as `/* … */`, inline ones above their statement, block
+// comments verbatim and re-indented, a comment closing a block at the end
+// of it, and a header's blank line kept.
+func TestMigrateKeepsComments(t *testing.T) {
+	src := `// Card styles
+
+.card
+  color red // why red
+  /* multi
+     line */
+  padding 4px
+  // closing
+.b
+  x 1
+`
+	res, err := styl.Migrate(src, styl.Options{}, styl.MigrateOptions{NoNotes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `/* Card styles */
+
+.card {
+  /* why red */
+  color: red;
+  /* multi
+     line */
+  padding: 4px;
+  /* closing */
+}
+
+.b {
+  x: 1;
+}
+`
+	if res.CSS != want {
+		t.Errorf("got:\n%s\nwant:\n%s", res.CSS, want)
+	}
+}
+
+func TestMigrateCommentsBraceSyntax(t *testing.T) {
+	src := "/* Header */\n.a {\n  color: red; // why\n  .b { x: 1; } /* nested */\n}\n"
+	res, err := styl.Migrate(src, styl.Options{}, styl.MigrateOptions{NoNotes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{"/* Header */", "/* why */", "/* nested */"} {
+		if !strings.Contains(res.CSS, c) {
+			t.Errorf("missing %s in:\n%s", c, res.CSS)
+		}
+	}
+	if strings.Index(res.CSS, "/* why */") > strings.Index(res.CSS, "color: red") {
+		t.Errorf("inline comment should precede its declaration:\n%s", res.CSS)
+	}
+}
+
+// TestMigrateVariableDocsMoveToRoot: comments directly above (or on the
+// line of) a root variable go into :root with its custom property; one
+// set apart by a blank line stays where it was, above :root.
+func TestMigrateVariableDocsMoveToRoot(t *testing.T) {
+	src := `// Theme tokens
+
+// Brand color
+primary = #c00
+gap = 8px // base spacing
+
+.a
+  color primary
+  margin gap
+`
+	res, err := styl.Migrate(src, styl.Options{}, styl.MigrateOptions{NoNotes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `/* Theme tokens */
+
+:root {
+  /* Brand color */
+  --primary: #c00;
+  /* base spacing */
+  --gap: 8px;
+}
+
+.a {
+  color: var(--primary);
+  margin: var(--gap);
+}
+`
+	if res.CSS != want {
+		t.Errorf("got:\n%s\nwant:\n%s", res.CSS, want)
+	}
+
+	// With NoVars nothing moves: the comments stay where they were.
+	res, err = styl.Migrate(src, styl.Options{}, styl.MigrateOptions{NoNotes: true, NoVars: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.CSS, "/* Brand color */") || !strings.Contains(res.CSS, "/* base spacing */") {
+		t.Errorf("NoVars lost variable comments:\n%s", res.CSS)
+	}
+}
+
+// TestMigrateMixinComments: a mixin's doc comment goes with its
+// definition (noted), comments inside its body are written at each
+// expansion, and a loop body's comment is written once.
+func TestMigrateMixinComments(t *testing.T) {
+	src := `// Clears floats
+clearfix()
+  // IE hack
+  zoom 1
+
+.a
+  clearfix()
+.b
+  clearfix()
+for i in 1..3
+  // per column
+  .c{i}
+    x i
+`
+	res := migrate(t, src)
+	if strings.Contains(res.CSS, "Clears floats") {
+		t.Errorf("mixin doc comment kept:\n%s", res.CSS)
+	}
+	if !hasNote(res, "comment", "clearfix()") {
+		t.Errorf("no note for the dropped comment: %v", res.Notes)
+	}
+	if n := strings.Count(res.CSS, "/* IE hack */"); n != 2 {
+		t.Errorf("mixin body comment written %d times, want 2:\n%s", n, res.CSS)
+	}
+	if n := strings.Count(res.CSS, "/* per column */"); n != 1 {
+		t.Errorf("loop body comment written %d times, want 1:\n%s", n, res.CSS)
+	}
+}
+
+func TestMigrateNoComments(t *testing.T) {
+	res, err := styl.Migrate("// a\n.a\n  x 1 // b\n", styl.Options{}, styl.MigrateOptions{NoComments: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.CSS, "/*") {
+		t.Errorf("comments with NoComments:\n%s", res.CSS)
+	}
 }

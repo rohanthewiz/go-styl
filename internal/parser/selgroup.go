@@ -60,14 +60,23 @@ func groupSelectorLines(lines []*line) []*line {
 		}
 
 		parts := make([]string, 0, j-i+1)
+		// Comments on the group's lines all go above the merged rule,
+		// except the header line's trailing ones, which stay after it.
+		var lead []srcComment
 		for k := i; k <= j; k++ {
 			parts = append(parts, lines[k].text)
+			lead = append(lead, lines[k].lead...)
+			if k < j {
+				lead = append(lead, lines[k].trail...)
+			}
 		}
 		out = append(out, &line{
 			text:     strings.Join(parts, ", "),
 			indent:   ln.indent,
 			lineNo:   ln.lineNo,
 			children: lines[j].children,
+			lead:     lead,
+			trail:    lines[j].trail,
 		})
 		merged = true
 		i = j

@@ -160,6 +160,26 @@ type BlockSlot struct {
 	Line, Col int // 1-based source position
 }
 
+// Comment is a source comment kept as a statement. Only
+// parser.ParseWithComments produces it (the migration carries comments into
+// its CSS); Parse drops comments, so the compiler, formatter and language
+// server never see one. Text is the body without its delimiters. A comment
+// on the same line as code, or on its own line directly above it, precedes
+// that code's statement; one that ends a block follows the block's last
+// statement.
+type Comment struct {
+	Text      string
+	Block     bool // `/* … */`; false for `// …`
+	Line, Col int  // 1-based position of the opening delimiter
+	EndLine   int  // 1-based line of the closing delimiter (Line for `//`)
+	// Inline means the comment shares a line with code (`color red // x`)
+	// and belongs to that statement.
+	Inline bool
+	// BlankAfter means a blank line follows the comment in the source (a
+	// header set apart from the code below it).
+	BlankAfter bool
+}
+
 // Pos returns a statement's 1-based source position, or (0, 0) if unrecorded.
 func Pos(s Stmt) (line, col int) {
 	switch n := s.(type) {
@@ -191,6 +211,8 @@ func Pos(s Stmt) (line, col int) {
 		return n.Line, n.Col
 	case *BlockSlot:
 		return n.Line, n.Col
+	case *Comment:
+		return n.Line, n.Col
 	}
 	return 0, 0
 }
@@ -210,6 +232,7 @@ func (*Extend) stmtNode()       {}
 func (*Import) stmtNode()       {}
 func (*AtRule) stmtNode()       {}
 func (*BlockSlot) stmtNode()    {}
+func (*Comment) stmtNode()      {}
 
 // --- Expressions ---
 

@@ -26,15 +26,30 @@ import "unicode/utf8"
 // expandSemicolons returns lines with every line that holds a top-level `;`
 // replaced by one line per non-empty statement. The input is returned as-is
 // when no line has a top-level `;`; lines themselves are never modified.
+//
+// A dropped `;`-only line can carry comments (ParseWithComments). They move
+// to the statement before it, else the one after it; with neither, the
+// result is a single text-less line holding them, which parseBlock turns
+// into comment statements only. Moving a comment copies the line it lands
+// on, so the input lines stay untouched.
 func expandSemicolons(lines []*line) []*line {
 	var out []*line
 	changed := false
+	var carry []srcComment // comments of dropped lines awaiting a next line
+	emit := func(ln *line) {
+		if len(carry) > 0 {
+			cp := *ln
+			cp.lead = append(carry[:len(carry):len(carry)], ln.lead...)
+			ln, carry = &cp, nil
+		}
+		out = append(out, ln)
+	}
 
 	for i, ln := range lines {
 		segs := splitSemicolons(ln.text)
 		if segs == nil {
 			if changed {
-				out = append(out, ln)
+				emit(ln)
 			}
 			continue
 		}
@@ -46,8 +61,16 @@ func expandSemicolons(lines []*line) []*line {
 			// Only semicolons (`;` or `;;`). A childless one is an empty
 			// statement and is dropped; one with a body is kept whole so the
 			// parser reports the nonsense rather than losing the body silently.
-			if len(ln.children) > 0 {
-				out = append(out, ln)
+			switch {
+			case len(ln.children) > 0:
+				emit(ln)
+			case len(ln.lead)+len(ln.trail) == 0:
+			case len(out) > 0:
+				cp := *out[len(out)-1]
+				cp.trail = append(append(cp.trail[:len(cp.trail):len(cp.trail)], ln.lead...), ln.trail...)
+				out[len(out)-1] = &cp
+			default:
+				carry = append(append(carry, ln.lead...), ln.trail...)
 			}
 			continue
 		}
@@ -57,11 +80,18 @@ func expandSemicolons(lines []*line) []*line {
 			// joined from a comma continuation the column of a later piece
 			// is an approximation (it counts across the joined text).
 			piece := &line{text: sg.text, indent: ln.indent + sg.col, lineNo: ln.lineNo}
+			if k == 0 {
+				piece.lead = ln.lead
+			}
 			if k == len(segs)-1 {
 				piece.children = ln.children
+				piece.trail = ln.trail
 			}
-			out = append(out, piece)
+			emit(piece)
 		}
+	}
+	if len(carry) > 0 {
+		out = append(out, &line{lead: carry})
 	}
 
 	if !changed {

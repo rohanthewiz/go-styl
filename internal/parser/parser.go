@@ -21,10 +21,36 @@ type line struct {
 	indent   int    // indentation width (tabs expanded to tabWidth)
 	lineNo   int    // 1-based source line number
 	children []*line
+
+	// Comments attached to the line (ParseWithComments only): lead ones
+	// become statements before the line's own statement, trail ones after
+	// it. Comments never enter the tree as lines of their own, so they
+	// can't turn a leaf into a block or split an if/else chain.
+	lead, trail []srcComment
 }
 
-// Parse parses Stylus source into a Stylesheet AST.
+// Parse parses Stylus source into a Stylesheet AST. Comments are dropped.
 func Parse(src string) (*ast.Stylesheet, error) {
+	return parse(src, false)
+}
+
+// ParseWithComments is Parse keeping comments as *ast.Comment statements
+// (see ast.Comment for where each one lands). The migration uses it; the
+// evaluator treats a Comment as a no-op.
+func ParseWithComments(src string) (*ast.Stylesheet, error) {
+	return parse(src, true)
+}
+
+func parse(src string, withComments bool) (*ast.Stylesheet, error) {
+	// Comments are positioned against the source as written. The two
+	// rewrites below keep every statement on its source line (except the
+	// statements of a one-line brace block), so those positions still
+	// match the lines buildTree sees.
+	var comments []srcComment
+	if withComments {
+		comments = scanComments(src)
+	}
+
 	// A multi-line object literal (`theme = {` … `}`) is folded onto one line
 	// first, so neither the brace normalizer nor the indentation tree sees
 	// its braces and pair lines as structure.
@@ -35,23 +61,28 @@ func Parse(src string) (*ast.Stylesheet, error) {
 		src = bracesToIndent(src)
 	}
 
-	roots, err := buildTree(src)
+	root, err := buildTree(src, comments)
 	if err != nil {
 		return nil, err
 	}
 
-	stmts, err := parseBlock(roots)
+	stmts, err := parseBlock(root.children)
 	if err != nil {
 		return nil, err
 	}
+	// Comments in a sheet with no statements have no line to attach to.
+	stmts = append(commentStmts(root.lead), stmts...)
+	stmts = append(stmts, commentStmts(root.trail)...)
 	return &ast.Stylesheet{Statements: stmts}, nil
 }
 
-// buildTree strips comments and assembles the indentation tree's root lines.
-func buildTree(src string) ([]*line, error) {
+// buildTree strips comments and assembles the indentation tree under a
+// synthetic root line (indent -1). comments, when given, are attached to
+// the tree's lines (see attachComments).
+func buildTree(src string, comments []srcComment) (*line, error) {
 	cleaned := stripComments(src)
+	att := newCommentAttacher(comments, cleaned)
 
-	var roots []*line
 	// stack holds the current ancestry; stack[0] is a synthetic root.
 	root := &line{indent: -1}
 	stack := []*line{root}
@@ -78,6 +109,7 @@ func buildTree(src string) ([]*line, error) {
 
 		if cont != nil {
 			cont.text += " " + content
+			att.continued(cont, i+1)
 			if !strings.HasSuffix(content, ",") {
 				cont = nil
 			}
@@ -85,6 +117,7 @@ func buildTree(src string) ([]*line, error) {
 		}
 
 		ln := &line{text: content, indent: indent, lineNo: i + 1}
+		att.place(ln, stack)
 		if strings.HasSuffix(content, ",") {
 			cont = ln
 		}
@@ -98,8 +131,8 @@ func buildTree(src string) ([]*line, error) {
 		stack = append(stack, ln)
 	}
 
-	roots = root.children
-	return roots, nil
+	att.finish(root, stack)
+	return root, nil
 }
 
 // splitIndent returns the indentation width and the trimmed content of a line.
@@ -141,12 +174,28 @@ func parseBlock(lines []*line) ([]ast.Stmt, error) {
 	var stmts []ast.Stmt
 	for i := 0; i < len(lines); i++ {
 		ln := lines[i]
+		if ln.text == "" {
+			// Comments of a block whose only statements were `;` (see
+			// expandSemicolons).
+			stmts = append(stmts, commentStmts(ln.lead)...)
+			continue
+		}
 		if isCondStart(ln.text) {
 			stmt, next, err := parseConds(lines, i)
 			if err != nil {
 				return nil, diag.WrapPos(err, "", ln.lineNo, ln.indent+1)
 			}
+			// The chain is one statement. Comments leading its first line
+			// go before the If; the rest (on or above an else line, or
+			// closing a branch) come later in the source, so they follow it.
+			stmts = append(stmts, commentStmts(ln.lead)...)
 			stmts = append(stmts, stmt)
+			for k, l := range lines[i:next] {
+				if k > 0 {
+					stmts = append(stmts, commentStmts(l.lead)...)
+				}
+				stmts = append(stmts, commentStmts(l.trail)...)
+			}
 			i = next - 1
 			continue
 		}
@@ -156,9 +205,11 @@ func parseBlock(lines []*line) ([]ast.Stmt, error) {
 			// know the line) at the line's leading column.
 			return nil, diag.WrapPos(err, "", ln.lineNo, ln.indent+1)
 		}
+		stmts = append(stmts, commentStmts(ln.lead)...)
 		if stmt != nil {
 			stmts = append(stmts, stmt)
 		}
+		stmts = append(stmts, commentStmts(ln.trail)...)
 	}
 	return stmts, nil
 }
