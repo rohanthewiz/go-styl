@@ -18,7 +18,10 @@ Under active development -- consider this Alpha. The compiler currently supports
   `list[0..1]`)
 - **Control flow**: `if` / `else if` / `else` / `unless`, and `for … in` loops
 - User-defined **functions** (return values) and **mixins** (emit declarations/rules),
-  with default and rest (`args…`) parameters, in single-line and block forms
+  with default and rest (`args…`) parameters, in single-line and block forms.
+  **Block mixins**: `+m(args)` followed by an indented body passes that body
+  to `m`, which emits it wherever it writes `{block}` (e.g. a `mobile()`
+  mixin wrapping `{block}` in an `@media`)
 - **Built-in functions** across color (`rgb`/`rgba`/`hsl`/`hsla`/`lighten`/`darken`/
   `saturate`/`mix`/`tint`/`shade`/`complement`/`invert`/`grayscale`/`fade-in`/
   `fade-out`/`blend`/`transparentify`/`luminosity`/`component`/`hue`/`alpha`/…),

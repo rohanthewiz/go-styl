@@ -128,6 +128,42 @@ type execCtx struct {
 	// pure function call has no rule of its own, but add-property() inside
 	// it targets the rule of the declaration that called it.
 	propRule *css.Rule
+	// block is the block the executing mixin was called with (`+m(args)`
+	// plus an indented body), run by `{block}`; nil when there is none.
+	// Every nested context of the mixin body (rulesets, @media, …) carries
+	// it, so a `{block}` at any depth of the body finds it.
+	block *passedBlock
+}
+
+// passedBlock is the indented body handed to a user block mixin, together
+// with the call site's lexical context. `{block}` runs the body with the
+// call site's scope, file and import directory (the statements were written
+// there, so their variables and @imports resolve there), but emits into the
+// slot's rule and selectors (where the mixin placed it):
+//
+//	m()                        +m()           .wrap .a { color: red }
+//	  .wrap                      .a
+//	    {block}      ──►           color c    (c from the call site's scope)
+//
+// outer is the block of the mixin the call site itself sits in, so a
+// `{block}` inside the passed body refers to that enclosing mixin's block
+// rather than to itself.
+type passedBlock struct {
+	body  []ast.Stmt
+	scope *Scope
+	file  string
+	dir   string
+	mixin string
+	outer *passedBlock
+}
+
+// newPassedBlock captures a block mixin call's body and its call-site
+// context ctx; nil when the call has no block.
+func newPassedBlock(body []ast.Stmt, ctx *execCtx) *passedBlock {
+	if body == nil {
+		return nil
+	}
+	return &passedBlock{body: body, scope: ctx.scope, file: ctx.file, dir: ctx.dir, mixin: ctx.mixin, outer: ctx.block}
 }
 
 // Evaluate evaluates a stylesheet and returns the rendered CSS.
@@ -367,6 +403,12 @@ func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 		return ev.evalImport(s, ctx)
 	case *ast.AtRule:
 		return ev.evalAtRule(s, ctx)
+	case *ast.BlockSlot:
+		child, body, err := ev.blockSlotCtx(ctx)
+		if err != nil {
+			return err
+		}
+		return ev.execBlock(body, child)
 	default:
 		return fmt.Errorf("unsupported statement %T", stmt)
 	}
@@ -422,7 +464,7 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 	ev.rules = append(ev.rules, rule)
 
 	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, sink: ctx.sink, dir: ctx.dir, file: ctx.file, mixin: ctx.mixin,
-		stack: append(ctx.stack[:len(ctx.stack):len(ctx.stack)], selfs), media: ctx.media, prefix: ctx.prefix}
+		stack: append(ctx.stack[:len(ctx.stack):len(ctx.stack)], selfs), media: ctx.media, prefix: ctx.prefix, block: ctx.block}
 	if err := ev.execBlock(rs.Body, child); err != nil {
 		return err
 	}
@@ -531,15 +573,16 @@ func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 	if err != nil {
 		return err
 	}
-	_, err = ev.invoke(cl, args, ctx)
+	_, err = ev.invoke(cl, args, ctx, nil)
 	return err
 }
 
 // invoke runs a closure's body. emit carries the caller's emission context (rule,
 // selectors, sink, dir) so a mixin's declarations and nested rulesets land in the
 // caller's output; pass nil for a pure function (expression) call. The return
-// value is the body's `return` value, or Null if none.
-func (ev *evaluator) invoke(cl *Closure, args []value.Value, emit *execCtx) (value.Value, error) {
+// value is the body's `return` value, or Null if none. blk is the block a
+// block mixin call passed (see passedBlock), or nil.
+func (ev *evaluator) invoke(cl *Closure, args []value.Value, emit *execCtx, blk *passedBlock) (value.Value, error) {
 	if ev.depth >= maxCallDepth {
 		return nil, fmt.Errorf("call depth exceeds %d in %q — unbounded recursion?", maxCallDepth, cl.Def.Name)
 	}
@@ -552,7 +595,7 @@ func (ev *evaluator) invoke(cl *Closure, args []value.Value, emit *execCtx) (val
 	}
 	// Body statements' positions refer to the definition site, so error
 	// positioning uses the closure's file rather than the caller's.
-	fctx := &execCtx{scope: fscope, file: cl.File, mixin: cl.Def.Name}
+	fctx := &execCtx{scope: fscope, file: cl.File, mixin: cl.Def.Name, block: blk}
 	// The body sees its call site's selector stack, media and class prefix
 	// (see execCtx). ev.cur is the calling statement's context.
 	if caller := ev.cur; caller != nil {
@@ -1007,7 +1050,7 @@ func (ev *evaluator) evalCall(c *ast.Call, scope *Scope) (value.Value, error) {
 
 	// User-defined function takes precedence (it can shadow a built-in).
 	if cl, ok := scope.GetFunc(c.Name); ok {
-		return ev.invoke(cl, args, nil)
+		return ev.invoke(cl, args, nil, nil)
 	}
 
 	// Built-ins that need the evaluator (the call site's selector, scope or

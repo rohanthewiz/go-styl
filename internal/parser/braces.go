@@ -290,9 +290,11 @@ func scanStructural(runes []rune, h scanHandlers) {
 			}
 
 		case c == '{':
-			// Interpolation and object literals (`x = {a: 1}`) are copied
-			// verbatim; only a block brace is structure.
-			if end := matchRuneBrace(runes, i); end >= 0 && (isInterpBrace(runes, i, end) || isObjectBrace(runes, i)) {
+			// Interpolation, object literals (`x = {a: 1}`) and a block
+			// mixin's `{block}` slot are copied verbatim; only a block
+			// brace is structure.
+			if end := matchRuneBrace(runes, i); end >= 0 &&
+				(isInterpBrace(runes, i, end) || isObjectBrace(runes, i) || string(runes[i:end+1]) == "{block}") {
 				if h.interp != nil {
 					h.interp(string(runes[i : end+1]))
 				}

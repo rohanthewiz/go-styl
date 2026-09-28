@@ -33,11 +33,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 
 ## Open
 
-- **N-041** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value low
-  Block mixins for user mixins: `+m(args)` with an indented body, and
-  `{block}` inside the mixin to emit it. The parser now produces
-  `MixinCall.Block`, but only the built-in `+prefix-classes` accepts one;
-  a user mixin given a block is an error.
 - **N-043** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value medium
   `styl migrate` drops source comments: `parser.stripComments` removes them
   before lexing, so the AST never sees them. A migration that loses the
@@ -99,6 +94,19 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-041** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · closed 2026-09-27, `2026-0927-2007-go-styl-n041-block-mixins`
+  User block mixins. `+m(args)` with an indented body passes the body to a
+  user mixin, which runs it at `{block}` (`ast.BlockSlot`, matched as
+  whole-line text; the brace normalizer copies `{block}` verbatim). The
+  body keeps its call-site scope, file and import dir but emits into the
+  slot's rule, selectors, @media and class prefix (`passedBlock`, carried
+  on every nested `execCtx`); a `{block}` inside the body refers to the
+  enclosing mixin's block. A user mixin shadows `+prefix-classes`.
+  `styl migrate` expands it the same way. Corpus file
+  `difftest/corpus/block-mixins.styl` matches stylus 0.64. Deliberate
+  difference: `{block}` outside any mixin is an error (Stylus drops it); in
+  a mixin called without a block it is empty, as in Stylus.
 
 - **N-005** · raised `2026-0701-1623-go-styl-m7-m8` · closed 2026-09-27, `2026-0927-1931-n005-lsp-and-fmt`
   Stylus LSP (killer feature #4) and `styl fmt`.
@@ -177,7 +185,7 @@ are recorded in the session docs.
   `selector-exists()`, `current-media()`, `define()`, `lookup()`,
   `add-property()`, `warn()` (`Options.Warn`), `+prefix-classes(p)`.
   `push`/`append`/`unshift`/`prepend`/`pop`/`shift` rebind the list
-  variable they're given. `use()` → N-042; user block mixins → N-041.
+  variable they're given. `use()` → N-042; user block mixins → N-041 (closed).
   Deliberate differences: `current-media()` omits 0.64's stray parentheses;
   `selector-exists()` only sees rules compiled before it; an object as a
   property value is an error; `in` whose right side is a bare word stays CSS

@@ -232,6 +232,14 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		return parseAtRule(ln)
 	}
 
+	// {block}: a block mixin's slot for the block it was called with. It is
+	// matched as whole-line text, before tokenizing, because the lexer reads
+	// a leading '{' as interpolation in selector position. A trailing ';'
+	// (brace syntax) is allowed.
+	if strings.TrimSpace(strings.TrimSuffix(text, ";")) == "{block}" {
+		return &ast.BlockSlot{Line: ln.lineNo, Col: ln.indent + 1}, nil
+	}
+
 	// return [expr]
 	if wordPrefix(text, "return") {
 		rest := strings.TrimSpace(text[len("return"):])

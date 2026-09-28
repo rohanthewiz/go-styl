@@ -1,0 +1,40 @@
+// Block mixins: +m(args) with an indented body, emitted at {block}.
+c = red
+mobile(w = 600px)
+  @media (max-width: w)
+    {block}
+
+wrap(cls)
+  .{cls}
+    margin 0
+    {block}
+    &:hover
+      {block}
+
+outer()
+  .o
+    +inner()
+      padding 1px
+      {block}
+
+inner()
+  .i
+    {block}
+
+.btn
+  color blue
+  +mobile()
+    color c
+    .x
+      width 1px
+
++wrap('card')
+  color c
+
++outer()
+  border 0
+
+.p
+  +prefix-classes('ui-')
+    +wrap('k')
+      top 0

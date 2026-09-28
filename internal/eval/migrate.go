@@ -259,6 +259,14 @@ func (m *migrator) execInner(stmt ast.Stmt, mc *mctx) error {
 		return m.atRule(s, mc)
 	case *ast.Extend:
 		return m.extend(s, mc)
+	case *ast.BlockSlot:
+		// The passed block is walked in place, so its rules nest in the
+		// slot's output node like the mixin body around it.
+		child, body, err := m.ev.blockSlotCtx(mc.ec)
+		if err != nil {
+			return err
+		}
+		return m.walk(body, &mctx{ec: child, node: mc.node, chain: mc.chain, inRule: mc.inRule})
 	default:
 		// FuncDef, MemberAssign, ExprStmt, Return: nothing structural, so
 		// the evaluator runs them as is.
@@ -648,7 +656,7 @@ func (m *migrator) ruleSet(rs *ast.RuleSet, mc *mctx) error {
 
 	child := &execCtx{scope: ec.scope.Child(), rule: scratchRule(combined), parents: combined, sink: ec.sink,
 		dir: ec.dir, file: ec.file, mixin: ec.mixin,
-		stack: append(ec.stack[:len(ec.stack):len(ec.stack)], selfs), media: ec.media, prefix: ec.prefix}
+		stack: append(ec.stack[:len(ec.stack):len(ec.stack)], selfs), media: ec.media, prefix: ec.prefix, block: ec.block}
 	if err := m.walk(rs.Body, &mctx{ec: child, node: node, chain: mc.chain, inRule: true}); err != nil {
 		return err
 	}
@@ -763,8 +771,8 @@ func hasPseudoElement(sel string) bool {
 func (m *migrator) mixinCall(s *ast.MixinCall, mc *mctx) error {
 	ec := mc.ec
 	cl, ok := ec.scope.GetFunc(s.Name)
-	if s.Block != nil {
-		return m.blockMixinCall(s, cl, mc)
+	if s.Block != nil && !ok {
+		return m.blockMixinCall(s, mc)
 	}
 	if !ok {
 		if err := m.ev.evalMixinCall(s, ec); err != nil {
@@ -787,7 +795,7 @@ func (m *migrator) mixinCall(s *ast.MixinCall, mc *mctx) error {
 	if err := m.ev.bindParams(fscope, cl.Def.Params, args); err != nil {
 		return err
 	}
-	fctx := &execCtx{scope: fscope, file: cl.File, mixin: cl.Def.Name,
+	fctx := &execCtx{scope: fscope, file: cl.File, mixin: cl.Def.Name, block: newPassedBlock(s.Block, ec),
 		rule: ec.rule, parents: ec.parents, sink: ec.sink, dir: ec.dir,
 		stack: ec.stack, media: ec.media, prefix: ec.prefix, propRule: ec.rule}
 	if fctx.propRule == nil {
@@ -802,12 +810,10 @@ func (m *migrator) mixinCall(s *ast.MixinCall, mc *mctx) error {
 }
 
 // blockMixinCall handles +prefix-classes(p) with its block: the prefix is
-// baked into the class names of the block's selectors.
-func (m *migrator) blockMixinCall(s *ast.MixinCall, cl *Closure, mc *mctx) error {
+// baked into the class names of the block's selectors. (A block passed to a
+// user mixin goes through mixinCall and is walked at its {block}.)
+func (m *migrator) blockMixinCall(s *ast.MixinCall, mc *mctx) error {
 	ec := mc.ec
-	if cl != nil {
-		return fmt.Errorf("passing a block to mixin %q is not supported (only +prefix-classes takes a block)", s.Name)
-	}
 	if s.Name != "prefix-classes" {
 		return fmt.Errorf("undefined block mixin %q", s.Name)
 	}
@@ -1028,13 +1034,13 @@ func (m *migrator) atRule(s *ast.AtRule, mc *mctx) error {
 	case "font-face", "page", "viewport":
 		node.head = head(params)
 		place()
-		child := &execCtx{scope: ec.scope.Child(), rule: scratchRule([]string{node.head}), sink: ec.sink, dir: ec.dir, file: ec.file}
+		child := &execCtx{scope: ec.scope.Child(), rule: scratchRule([]string{node.head}), sink: ec.sink, dir: ec.dir, file: ec.file, block: ec.block}
 		return m.walk(s.Body, &mctx{ec: child, node: node, chain: mc.chain})
 	case "keyframes":
 		node.head = head(params)
 		place()
 		// Frame selectors (from, 50%) never combine with a parent.
-		child := &execCtx{scope: ec.scope.Child(), sink: ec.sink, dir: ec.dir, file: ec.file}
+		child := &execCtx{scope: ec.scope.Child(), sink: ec.sink, dir: ec.dir, file: ec.file, block: ec.block}
 		return m.walk(s.Body, &mctx{ec: child, node: node, chain: mc.chain})
 	default:
 		// var() is invalid in media queries, so variables resolve to their
@@ -1042,7 +1048,7 @@ func (m *migrator) atRule(s *ast.AtRule, mc *mctx) error {
 		node.head = head(m.ev.evalAtVars(params, ec.scope))
 		mc.node.kids = append(mc.node.kids, node)
 		child := &execCtx{scope: ec.scope.Child(), parents: ec.parents, sink: ec.sink, dir: ec.dir,
-			file: ec.file, mixin: ec.mixin, stack: ec.stack, media: ec.media, prefix: ec.prefix}
+			file: ec.file, mixin: ec.mixin, stack: ec.stack, media: ec.media, prefix: ec.prefix, block: ec.block}
 		if strings.HasPrefix(node.head, "@media") {
 			child.media = node.head
 		}

@@ -104,7 +104,7 @@ func (ev *evaluator) evalAtDeclBlock(header string, body []ast.Stmt, ctx *execCt
 	*ctx.sink = append(*ctx.sink, rule)
 	ev.rules = append(ev.rules, rule)
 
-	child := &execCtx{scope: ctx.scope.Child(), rule: rule, sink: ctx.sink, dir: ctx.dir}
+	child := &execCtx{scope: ctx.scope.Child(), rule: rule, sink: ctx.sink, dir: ctx.dir, block: ctx.block}
 	return ev.execBlock(body, child)
 }
 
@@ -114,7 +114,7 @@ func (ev *evaluator) evalKeyframes(header string, body []ast.Stmt, ctx *execCtx,
 	atr := &css.AtRule{Header: header, Pos: pos}
 	*ctx.sink = append(*ctx.sink, atr)
 
-	child := &execCtx{scope: ctx.scope.Child(), sink: &atr.Nodes, dir: ctx.dir}
+	child := &execCtx{scope: ctx.scope.Child(), sink: &atr.Nodes, dir: ctx.dir, block: ctx.block}
 	return ev.execBlock(body, child)
 }
 
@@ -126,7 +126,7 @@ func (ev *evaluator) evalAtNested(header string, body []ast.Stmt, ctx *execCtx, 
 	*ctx.sink = append(*ctx.sink, atr)
 
 	child := &execCtx{scope: ctx.scope.Child(), parents: ctx.parents, sink: &atr.Nodes, dir: ctx.dir,
-		file: ctx.file, mixin: ctx.mixin, stack: ctx.stack, media: ctx.media, prefix: ctx.prefix}
+		file: ctx.file, mixin: ctx.mixin, stack: ctx.stack, media: ctx.media, prefix: ctx.prefix, block: ctx.block}
 	if strings.HasPrefix(header, "@media") {
 		child.media = header
 	}

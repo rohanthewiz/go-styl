@@ -345,8 +345,10 @@ func biPrefixClassesNoBlock(*evaluator, *ast.Call, []value.Value, *Scope) (value
 }
 
 // evalBlockMixinCall runs a `+name(args)` call that carries an indented
-// block. The only block mixin go-styl supports is the built-in
-// prefix-classes(prefix), which runs the block with a class prefix:
+// block. A user mixin of that name (cl) receives the block and runs it at
+// its `{block}` (see passedBlock); a user definition takes precedence over
+// the built-in, as for ordinary calls. Otherwise the only block mixin is the
+// built-in prefix-classes(prefix), which runs the block with a class prefix:
 //
 //	+prefix-classes('ui-')          .ui-btn { … }
 //	  .btn                    →     .ui-btn.ui-big { … }
@@ -357,7 +359,12 @@ func biPrefixClassesNoBlock(*evaluator, *ast.Call, []value.Value, *Scope) (value
 // cl is the user mixin of that name, if one is defined.
 func (ev *evaluator) evalBlockMixinCall(s *ast.MixinCall, cl *Closure, ctx *execCtx) error {
 	if cl != nil {
-		return fmt.Errorf("passing a block to mixin %q is not supported (only +prefix-classes takes a block)", s.Name)
+		args, err := ev.evalArgs(s.Args, ctx.scope)
+		if err != nil {
+			return err
+		}
+		_, err = ev.invoke(cl, args, ctx, newPassedBlock(s.Block, ctx))
+		return err
 	}
 	if s.Name != "prefix-classes" {
 		return fmt.Errorf("undefined block mixin %q", s.Name)
@@ -377,6 +384,30 @@ func (ev *evaluator) evalBlockMixinCall(s *ast.MixinCall, cl *Closure, ctx *exec
 	ctx.prefix = prefix
 	defer func() { ctx.prefix = saved }()
 	return ev.execBlock(s.Block, ctx)
+}
+
+// blockSlotCtx resolves a `{block}` executed in ctx: the passed block's body
+// and the context to run it in, which joins the call site's lexical side
+// (scope, file, import dir, enclosing mixin and its block) with the slot's
+// emission side (rule, selectors, sink, media, class prefix). The block gets
+// a child scope, as a ruleset body does, so its assignments stay local.
+//
+// A mixin called without a block (`m()`) sees an empty slot, as in Stylus,
+// so a mixin can take an optional block: body is nil and nothing runs.
+// Outside any mixin Stylus also ignores `{block}`, but there it can only be
+// a mistake, so it is reported.
+func (ev *evaluator) blockSlotCtx(ctx *execCtx) (*execCtx, []ast.Stmt, error) {
+	blk := ctx.block
+	if blk == nil {
+		if ctx.mixin == "" {
+			return nil, nil, fmt.Errorf("{block} is only valid inside a mixin body")
+		}
+		return ctx, nil, nil
+	}
+	child := &execCtx{scope: blk.scope.Child(), file: blk.file, dir: blk.dir, mixin: blk.mixin, block: blk.outer,
+		rule: ctx.rule, parents: ctx.parents, sink: ctx.sink, stack: ctx.stack, media: ctx.media,
+		prefix: ctx.prefix, propRule: ctx.propRule}
+	return child, blk.body, nil
 }
 
 // prefixClasses inserts prefix after every '.' that begins a class name

@@ -67,7 +67,8 @@ type MixinCall struct {
 	Name string
 	Args []Expr
 	// Block is the indented body passed to a block mixin call
-	// (`+prefix-classes('ui-')` followed by nested rules), nil otherwise.
+	// (`+prefix-classes('ui-')` or a user `+m(args)` followed by nested
+	// statements), nil otherwise. A user mixin runs it at its `{block}`.
 	Block     []Stmt
 	Line, Col int // 1-based source position
 }
@@ -151,6 +152,14 @@ type AtRule struct {
 	Line, Col int // 1-based source position
 }
 
+// BlockSlot is `{block}` on a line of its own inside a mixin body: it runs
+// the indented block the mixin was called with (`+m(args)` followed by an
+// indented body) at that spot, so the block's declarations and rules land
+// wherever the mixin places the slot.
+type BlockSlot struct {
+	Line, Col int // 1-based source position
+}
+
 // Pos returns a statement's 1-based source position, or (0, 0) if unrecorded.
 func Pos(s Stmt) (line, col int) {
 	switch n := s.(type) {
@@ -180,6 +189,8 @@ func Pos(s Stmt) (line, col int) {
 		return n.Line, n.Col
 	case *AtRule:
 		return n.Line, n.Col
+	case *BlockSlot:
+		return n.Line, n.Col
 	}
 	return 0, 0
 }
@@ -198,6 +209,7 @@ func (*ExprStmt) stmtNode()     {}
 func (*Extend) stmtNode()       {}
 func (*Import) stmtNode()       {}
 func (*AtRule) stmtNode()       {}
+func (*BlockSlot) stmtNode()    {}
 
 // --- Expressions ---
 
