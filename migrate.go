@@ -20,6 +20,31 @@ type MigrateOptions struct {
 	// `/* … */`; comments directly above a root variable move with it
 	// into :root.
 	NoComments bool
+	// Split migrates file for file: each .styl file imported at the top
+	// level of a sheet becomes a CSS file of its own, and its @import an
+	// `@import "x.css";` (moved to the top of the importing file, as CSS
+	// requires). A file that emits no CSS (variables and mixins only) is
+	// not written and its import is dropped. The :root custom properties
+	// go to a shared tokens file that the entry sheet imports first.
+	// Imports inside a rule or at-rule are still inlined. The output is
+	// in MigrateResult.Files.
+	Split bool
+	// TokensFile names the tokens file under Split ("tokens.css" when
+	// empty), relative to the output root.
+	TokensFile string
+}
+
+// MigratedFile is one output file of a Split migration.
+type MigratedFile struct {
+	// Path is relative to the output root, slash-separated. Paths mirror
+	// the sources relative to the entry sheet's directory (x.styl →
+	// x.css); a source outside it goes under _external/. The files'
+	// @import URLs are relative to each other.
+	Path string
+	// Source is the Stylus file the CSS came from ("" for the tokens
+	// file).
+	Source string
+	CSS    string
 }
 
 // MigrateNote marks a place where the migration made a judgment call that
@@ -52,6 +77,10 @@ type MigrateResult struct {
 	Notes []MigrateNote
 	// Deps lists the resolved path of every inlined .styl @import.
 	Deps []string
+	// Files is set under MigrateOptions.Split: the entry sheet first (its
+	// CSS is also in CSS), then the tokens file when any custom property
+	// is used, then each imported file that emits CSS, in import order.
+	Files []MigratedFile
 }
 
 // Migrate converts Stylus source into modern CSS for teams leaving the
@@ -67,6 +96,7 @@ type MigrateResult struct {
 //   - @extend adds the extending selectors to the target rule's list
 //   - .styl imports are inlined; CSS imports pass through
 //   - source comments are kept in place (see MigrateOptions.NoComments)
+//   - with MigrateOptions.Split, imported files stay separate CSS files
 //
 // Selectors CSS nesting can't express — `&` concatenation such as BEM
 // `&__elem`, or nesting under a pseudo-element — are written out in full
@@ -102,6 +132,8 @@ func Migrate(src string, opts Options, mo MigrateOptions) (MigrateResult, error)
 		Notes:      !mo.NoNotes,
 		NoVars:     mo.NoVars,
 		NoComments: mo.NoComments,
+		Split:      mo.Split,
+		TokensFile: mo.TokensFile,
 	})
 	if err != nil {
 		return MigrateResult{}, compileErr(err, opts.Filename)
@@ -109,6 +141,9 @@ func Migrate(src string, opts Options, mo MigrateOptions) (MigrateResult, error)
 	out := MigrateResult{CSS: res.CSS, Deps: res.Deps}
 	for _, n := range res.Notes {
 		out.Notes = append(out.Notes, MigrateNote(n))
+	}
+	for _, f := range res.Files {
+		out.Files = append(out.Files, MigratedFile(f))
 	}
 	return out, nil
 }

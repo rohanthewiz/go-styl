@@ -33,11 +33,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 
 ## Open
 
-- **N-044** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value low
-  `styl migrate` inlines `.styl` imports into one output. Migrating a
-  multi-file project file-for-file needs partials that define only
-  variables/mixins to vanish, and other files to become
-  `@import "x.css"`. The :root tokens would go to a shared file.
 - **N-045** · raised `2026-0927-1931-n005-lsp-and-fmt` · value low
   The LSP compiles imports from disk. An unsaved edit to an imported file
   shows in definitions and completion (they read the editor's text), but
@@ -88,6 +83,15 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-044** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · closed 2026-09-27, `2026-0927-2036-go-styl-n044-migrate-split`
+  `styl migrate -split -o dir` / `MigrateOptions.Split`: each root-level
+  `.styl` import gets its own output root and becomes `@import "x.css"`
+  (moved to the file top, noted if it passes a rule); files emitting no CSS
+  vanish (decided after @extend, noted); :root goes to `tokens.css`
+  (`-tokens`), imported first by the entry. Nested and repeated imports are
+  still inlined, noted. `MigrateResult.Files`; split round-trip test over
+  the corpus plus an fstest project.
 
 - **N-043** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · closed 2026-09-27, `2026-0927-2024-go-styl-n043-migrate-comments`
   `styl migrate` keeps source comments. `parser.ParseWithComments` adds

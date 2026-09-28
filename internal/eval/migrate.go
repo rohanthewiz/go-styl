@@ -63,6 +63,24 @@ type MigrateOptions struct {
 	// parsed with parser.ParseWithComments has them carried into the CSS
 	// (see migrator.comment); .styl imports are parsed the same way.
 	NoComments bool
+	// Split writes each root-level .styl import to a CSS file of its own
+	// (see migrate_split.go) instead of inlining it; MigrateResult.Files
+	// lists every output file.
+	Split bool
+	// TokensFile names the shared custom-property file under Split
+	// ("tokens.css" when empty).
+	TokensFile string
+}
+
+// MigratedFile is one output file of a Split migration. Path is relative
+// to the output root and slash-separated; the files' @import URLs are
+// relative to one another, so the set can be written anywhere.
+type MigratedFile struct {
+	Path string
+	// Source is the Stylus file the CSS came from ("" for the tokens
+	// file, or for the entry sheet when Options.Filename is unset).
+	Source string
+	CSS    string
 }
 
 // MigrateNote marks a place where the migration made a judgment call that
@@ -82,6 +100,10 @@ type MigrateResult struct {
 	Notes []MigrateNote
 	// Deps lists every inlined .styl import, as Result.Deps does.
 	Deps []string
+	// Files is set under Split: the entry sheet first (its CSS is also
+	// CSS), then the tokens file if any variable made it to :root, then
+	// each imported file that emits CSS, in import order.
+	Files []MigratedFile
 }
 
 // mKind discriminates mnode.
@@ -93,6 +115,7 @@ const (
 	mDecl                 // a declaration: prop, val, important
 	mRaw                  // a verbatim line (leaf at-rules, literal @import)
 	mComment              // a source comment: head is its CSS text
+	mImport               // Split: a .styl import written as its own file (imp)
 )
 
 // mnode is one node of the migrated output tree.
@@ -111,6 +134,15 @@ type mnode struct {
 	src   *ast.Comment
 	file  string
 	moved bool
+
+	// isRoot marks the root of an output file: the sheet's, or under
+	// Split an imported file's. Hoisted rules are flushed into the root
+	// being walked.
+	isRoot bool
+	// mImport only: the file imported, and the @import's position (for
+	// the notes written when the import is placed or dropped).
+	imp       *mfile
+	line, col int
 
 	// @extend bookkeeping (mRule only). abs is the rule's fully combined
 	// selector list, what an @extend target is matched against. rootLevel
@@ -182,6 +214,13 @@ type migrator struct {
 	// muted > 0 while a loop runs its second and later iterations: a
 	// comment in a loop body is written once, not once per iteration.
 	muted int
+
+	// Split bookkeeping: files holds each imported file written on its
+	// own, in import order; byAbs finds one by source path; outNames
+	// reserves output paths so no two files collide.
+	files    []*mfile
+	byAbs    map[string]*mfile
+	outNames map[string]bool
 }
 
 // Migrate converts a parsed stylesheet to modern, nested CSS.
@@ -197,7 +236,7 @@ func Migrate(sheet *ast.Stylesheet, opts MigrateOptions) (MigrateResult, error) 
 	m := &migrator{
 		ev:         ev,
 		opts:       opts,
-		root:       &mnode{kind: mAt},
+		root:       &mnode{kind: mAt, isRoot: true},
 		varOf:      map[string]*value.Var{},
 		cssNames:   map[string]bool{},
 		reassigns:  map[string]bool{},
@@ -205,6 +244,8 @@ func Migrate(sheet *ast.Stylesheet, opts MigrateOptions) (MigrateResult, error) 
 		defs:       map[*value.Var]string{},
 		frozenDefs: map[*value.Var]MigrateNote{},
 		varDocs:    map[*value.Var][]*mnode{},
+		byAbs:      map[string]*mfile{},
+		outNames:   map[string]bool{},
 	}
 	// Globals are seeded as plain values: they are migrate-time inputs,
 	// not part of the sheet, so they inline.
@@ -214,13 +255,30 @@ func Migrate(sheet *ast.Stylesheet, opts MigrateOptions) (MigrateResult, error) 
 	ec := &execCtx{scope: ev.rootScope, dir: opts.BaseDir, file: opts.Filename}
 	var sink []css.Node
 	ec.sink = &sink
+	if opts.Split {
+		// The entry's and the tokens file's names are taken first, so
+		// an imported file can't claim them.
+		m.outNames[m.entryOut()] = true
+		m.outNames[m.tokensOut()] = true
+	}
 	if err := m.walk(sheet.Statements, &mctx{ec: ec, node: m.root}); err != nil {
 		return MigrateResult{}, err
 	}
-	m.flush()
+	m.flush(m.root)
 	m.applyExtends()
-	// render can add notes (frozen :root values), so it runs before
-	// m.notes is read.
+	// render can add notes (frozen :root values, dropped or moved
+	// imports), so it runs before m.notes is read.
+	if opts.Split {
+		files := m.renderSplit()
+		var all strings.Builder
+		for _, f := range files {
+			all.WriteString(f.CSS)
+		}
+		if err := ev.checkOutput(all.String()); err != nil {
+			return MigrateResult{}, err
+		}
+		return MigrateResult{CSS: files[0].CSS, Notes: m.notes, Deps: ev.deps, Files: files}, nil
+	}
 	cssOut := m.render()
 	if err := ev.checkOutput(cssOut); err != nil {
 		return MigrateResult{}, err
@@ -228,9 +286,9 @@ func Migrate(sheet *ast.Stylesheet, opts MigrateOptions) (MigrateResult, error) 
 	return MigrateResult{CSS: cssOut, Notes: m.notes, Deps: ev.deps}, nil
 }
 
-// walk runs statements in mc, stopping at a return. At the top level,
-// hoisted nodes are flushed after each statement so they land right
-// after the block they came from.
+// walk runs statements in mc, stopping at a return. At the top level of
+// a file, hoisted nodes are flushed after each statement so they land
+// right after the block they came from.
 func (m *migrator) walk(stmts []ast.Stmt, mc *mctx) error {
 	for _, stmt := range stmts {
 		if mc.ec.returned {
@@ -248,8 +306,8 @@ func (m *migrator) walk(stmts []ast.Stmt, mc *mctx) error {
 		case *ast.FuncDef:
 			m.dropDocs(s, mc, mark)
 		}
-		if mc.node == m.root {
-			m.flush()
+		if mc.node.isRoot {
+			m.flush(mc.node)
 		}
 	}
 	return nil
@@ -810,9 +868,9 @@ func (m *migrator) hoistNode(mc *mctx, node *mnode) {
 	m.pending = append(m.pending, hoist{chain: slices.Clone(mc.chain), node: node})
 }
 
-// flush appends queued hoists to the root. Consecutive hoists under the
-// same at-rule chain share one wrapper.
-func (m *migrator) flush() {
+// flush appends queued hoists to root, the file root being walked.
+// Consecutive hoists under the same at-rule chain share one wrapper.
+func (m *migrator) flush(root *mnode) {
 	var lastChain []string
 	var lastInner *mnode
 	for _, h := range m.pending {
@@ -820,7 +878,7 @@ func (m *migrator) flush() {
 			lastInner.kids = append(lastInner.kids, h.node)
 			continue
 		}
-		parent := m.root
+		parent := root
 		for _, head := range h.chain {
 			w := &mnode{kind: mAt, head: head}
 			parent.kids = append(parent.kids, w)
@@ -1103,6 +1161,13 @@ func (m *migrator) importStmt(s *ast.Import, mc *mctx) error {
 		return err
 	}
 	mark := len(mc.node.kids)
+	// Under Split, an import at the top level of a file becomes a file of
+	// its own. One inside a rule or at-rule is inlined as usual: its
+	// output depends on the enclosing selector or condition, which a
+	// separate CSS file can't carry.
+	split := m.opts.Split && mc.node.isRoot
+	inlined := false
+	why := "" // under Split, why a file was inlined anyway
 	for _, abs := range files {
 		if s.Once {
 			if m.ev.required[abs] {
@@ -1136,7 +1201,25 @@ func (m *migrator) importStmt(s *ast.Import, mc *mctx) error {
 		importCtx := *ec
 		importCtx.dir = dirOf(m.ev.opts.FS, abs)
 		importCtx.file = abs
-		err = m.walk(sheet.Statements, &mctx{ec: &importCtx, node: mc.node, chain: mc.chain, inRule: mc.inRule})
+		target := &mctx{ec: &importCtx, node: mc.node, chain: mc.chain, inRule: mc.inRule}
+		switch f := m.byAbs[abs]; {
+		case split && f == nil:
+			// The file's statements run in the importer's scope as
+			// always (its variables and mixins stay visible), but its
+			// output goes to its own root.
+			f = m.newFile(abs)
+			mc.node.kids = append(mc.node.kids, &mnode{kind: mImport, imp: f, file: ec.file, line: s.Line, col: s.Col})
+			target.node = f.root
+		case split:
+			// A plain @import of a file already written out: its CSS
+			// here could differ (it reads the variables in scope now),
+			// so it is inlined rather than imported twice.
+			inlined = true
+			why = fmt.Sprintf(" (imported before as %s; its CSS here reads the variables in scope now, so it isn't imported twice)", f.out)
+		default:
+			inlined = true
+		}
+		err = m.walk(sheet.Statements, target)
 		delete(m.ev.importing, abs)
 		if err != nil {
 			return err
@@ -1145,7 +1228,12 @@ func (m *migrator) importStmt(s *ast.Import, mc *mctx) error {
 			ec.ret, ec.returned = importCtx.ret, true
 		}
 	}
-	m.annotate(ec, mc.node, mark, s.Line, s.Col, "import", fmt.Sprintf("inlined @import %q", s.Path))
+	if inlined {
+		if m.opts.Split && !split {
+			why = " (inside a rule or at-rule, so it can't be a file of its own)"
+		}
+		m.annotate(ec, mc.node, mark, s.Line, s.Col, "import", fmt.Sprintf("inlined @import %q%s", s.Path, why))
+	}
 	return nil
 }
 
@@ -1394,6 +1482,8 @@ func (n *mnode) hasOutput() bool {
 		return true
 	case mComment:
 		return !n.moved
+	case mImport:
+		return false // renderSplit replaces each one with its @import line
 	case mRaw:
 		return strings.TrimSpace(n.head) != ""
 	case mRule:
@@ -1427,7 +1517,9 @@ func (m *migrator) renderKids(kids []*mnode, depth int) string {
 			// blank line comes between them.
 			block = nextIsBlock(kids[i+1:])
 		}
-		if b.Len() > 0 && (gap || !afterComment && (block || prevBlock)) {
+		// Consecutive @import lines stay together.
+		imports := k.kind == mRaw && i > 0 && isImportLine(k) && isImportLine(kids[i-1])
+		if b.Len() > 0 && !imports && (gap || !afterComment && (block || prevBlock)) {
 			b.WriteString("\n")
 		}
 		prevBlock, afterComment = block, k.kind == mComment
@@ -1461,6 +1553,11 @@ func (m *migrator) renderKids(kids []*mnode, depth int) string {
 		}
 	}
 	return b.String()
+}
+
+// isImportLine reports whether n is a one-line @import.
+func isImportLine(n *mnode) bool {
+	return n.kind == mRaw && strings.HasPrefix(n.head, "@import") && !strings.Contains(strings.TrimSpace(n.head), "\n")
 }
 
 // nextIsBlock reports whether the first rendered non-comment node of kids

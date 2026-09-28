@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	styl "github.com/rohanthewiz/go-styl"
@@ -18,6 +19,8 @@ func runMigrate(args []string) {
 		noNotes bool
 		noVars  bool
 		noComms bool
+		split   bool
+		tokens  string
 		quiet   bool
 		globals = map[string]any{}
 	)
@@ -25,6 +28,8 @@ func runMigrate(args []string) {
 	fs.BoolVar(&noNotes, "no-notes", false, "omit the inline /* styl-migrate: … */ review comments")
 	fs.BoolVar(&noVars, "no-vars", false, "inline all variables instead of emitting custom properties")
 	fs.BoolVar(&noComms, "no-comments", false, "drop the source's comments instead of carrying them into the CSS")
+	fs.BoolVar(&split, "split", false, "write each imported .styl file as its own CSS file (needs -o <dir>)")
+	fs.StringVar(&tokens, "tokens", "", "with -split, the shared custom-property file (default tokens.css)")
 	fs.BoolVar(&quiet, "q", false, "don't list the review notes on stderr")
 	fs.Func("D", "define a global variable as name=value (repeatable)", func(s string) error {
 		name, val, ok := strings.Cut(s, "=")
@@ -44,9 +49,13 @@ func runMigrate(args []string) {
 		fs.Usage()
 		os.Exit(2)
 	}
+	if split && outPath == "" {
+		fmt.Fprintln(os.Stderr, "error: -split writes several files; give an output directory with -o")
+		os.Exit(2)
+	}
 
 	res, err := styl.MigrateFile(fs.Arg(0), styl.Options{Globals: globals},
-		styl.MigrateOptions{NoNotes: noNotes, NoVars: noVars, NoComments: noComms})
+		styl.MigrateOptions{NoNotes: noNotes, NoVars: noVars, NoComments: noComms, Split: split, TokensFile: tokens})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
@@ -59,6 +68,10 @@ func runMigrate(args []string) {
 		fmt.Fprintf(os.Stderr, "%d note(s) to review\n", len(res.Notes))
 	}
 
+	if split {
+		writeSplit(outPath, res.Files, quiet)
+		return
+	}
 	if outPath == "" {
 		fmt.Print(res.CSS)
 		return
@@ -66,5 +79,25 @@ func runMigrate(args []string) {
 	if err := os.WriteFile(outPath, []byte(res.CSS), 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "error writing output:", err)
 		os.Exit(1)
+	}
+}
+
+// writeSplit writes a -split migration's files under dir, creating
+// subdirectories as the paths need. Paths come from the migration (never
+// absolute, never above the output root), so they are joined as given.
+func writeSplit(dir string, files []styl.MigratedFile, quiet bool) {
+	for _, f := range files {
+		dst := filepath.Join(dir, filepath.FromSlash(f.Path))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, "error writing output:", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(dst, []byte(f.CSS), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "error writing output:", err)
+			os.Exit(1)
+		}
+		if !quiet {
+			fmt.Fprintln(os.Stderr, "wrote", dst)
+		}
 	}
 }

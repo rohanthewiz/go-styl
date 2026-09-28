@@ -48,6 +48,10 @@
 //	-no-notes     omit the inline review comments
 //	-no-vars      inline all variables instead of emitting custom properties
 //	-no-comments  drop the source's comments
+//	-split        file for file: each imported .styl file becomes its own
+//	              CSS file under the -o directory (required), variable/
+//	              mixin-only partials vanish, :root goes to tokens.css
+//	-tokens <f>   with -split, the tokens file's name
 //	-q            don't list the notes on stderr
 //	-D name=value define a global variable (repeatable), as above
 //

@@ -3,11 +3,13 @@ package styl_test
 import (
 	"fmt"
 	"math"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	styl "github.com/rohanthewiz/go-styl"
 )
@@ -761,5 +763,189 @@ func TestMigrateNoComments(t *testing.T) {
 	}
 	if strings.Contains(res.CSS, "/*") {
 		t.Errorf("comments with NoComments:\n%s", res.CSS)
+	}
+}
+
+// linkSplit splices a Split migration back into one stylesheet: each
+// `@import "x.css";` naming another output file is replaced by that
+// file's (linked) CSS. Other imports stay.
+func linkSplit(t *testing.T, files []styl.MigratedFile) string {
+	t.Helper()
+	byPath := map[string]string{}
+	for _, f := range files {
+		byPath[f.Path] = f.CSS
+	}
+	var link func(p string, depth int) string
+	link = func(p string, depth int) string {
+		if depth > 20 {
+			t.Fatalf("import loop at %s", p)
+		}
+		var b strings.Builder
+		for _, line := range strings.SplitAfter(byPath[p], "\n") {
+			trimmed := strings.TrimSpace(line)
+			if url, ok := strings.CutPrefix(trimmed, `@import "`); ok {
+				target := path.Join(path.Dir(p), strings.TrimSuffix(url, `";`))
+				if _, known := byPath[target]; known {
+					b.WriteString(link(target, depth+1))
+					continue
+				}
+			}
+			b.WriteString(line)
+		}
+		return b.String()
+	}
+	return link(files[0].Path, 0)
+}
+
+// TestMigrateSplitRoundTrip: under Split, the files spliced back together
+// declare exactly what Compile's output does (see TestMigrateRoundTrip).
+func TestMigrateSplitRoundTrip(t *testing.T) {
+	var files []string
+	for _, pat := range []string{"examples/*.styl", "testdata/*.styl", "testdata/*/main.styl", "difftest/corpus/*.styl"} {
+		m, err := filepath.Glob(pat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, m...)
+	}
+	for _, f := range files {
+		t.Run(f, func(t *testing.T) {
+			compiled, cerr := styl.CompileFile(f, styl.Options{Pretty: true, Warn: func(string) {}})
+			res, merr := styl.MigrateFile(f, styl.Options{Warn: func(string) {}}, styl.MigrateOptions{Split: true})
+			if cerr != nil || merr != nil {
+				if (cerr == nil) != (merr == nil) {
+					t.Fatalf("compile err %v, migrate err %v", cerr, merr)
+				}
+				return
+			}
+			if len(res.Files) == 0 || res.Files[0].CSS != res.CSS {
+				t.Fatalf("Files[0] should be the entry sheet")
+			}
+			want := flatDecls(t, compiled)
+			got := flatDecls(t, linkSplit(t, res.Files))
+			if !slices.Equal(want, got) {
+				t.Errorf("declarations differ\n--- compiled only:\n%s\n--- migrated only:\n%s",
+					strings.Join(minus(want, got), "\n"), strings.Join(minus(got, want), "\n"))
+			}
+		})
+	}
+}
+
+// splitProject is a small multi-file project covering each Split rule.
+var splitProject = fstest.MapFS{
+	"src/main.styl": {Data: []byte(`// Site entry
+
+@import "_vars"
+@import "ui/buttons"
+.page
+  color brand
+  @import "_inner"
+@import "late"
+`)},
+	// Variables and a mixin only: no file.
+	"src/_vars.styl": {Data: []byte("brand = #c00\npad(n)\n  padding n\n")},
+	// Rules, plus a placeholder another file extends and a nested import.
+	"src/ui/buttons.styl": {Data: []byte("@import \"_base\"\n.btn\n  pad(4px)\n  color brand\n")},
+	"src/ui/_base.styl":   {Data: []byte("$reset\n  margin 0\n")},
+	// Imported inside a rule: inlined.
+	"src/_inner.styl": {Data: []byte("background white\n")},
+	// Imported after a rule: hoisted, noted.
+	"src/late.styl": {Data: []byte(".late\n  @extend $reset\n  x 1\n")},
+}
+
+func TestMigrateSplitProject(t *testing.T) {
+	res, err := styl.MigrateFile("src/main.styl", styl.Options{FS: splitProject}, styl.MigrateOptions{Split: true, NoNotes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	var paths []string
+	for _, f := range res.Files {
+		got[f.Path] = f.CSS
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"main.css", "tokens.css", "ui/buttons.css", "ui/_base.css", "late.css"}; !slices.Equal(paths, want) {
+		t.Fatalf("files = %v, want %v", paths, want)
+	}
+
+	wantMain := `/* Site entry */
+
+@import "tokens.css";
+@import "ui/buttons.css";
+@import "late.css";
+
+.page {
+  color: var(--brand);
+  background: white;
+}
+`
+	if got["main.css"] != wantMain {
+		t.Errorf("main.css:\n%s\nwant:\n%s", got["main.css"], wantMain)
+	}
+	if !strings.Contains(got["tokens.css"], "--brand: #c00;") {
+		t.Errorf("tokens.css:\n%s", got["tokens.css"])
+	}
+	// Imports are relative to the importing file.
+	if !strings.HasPrefix(got["ui/buttons.css"], `@import "_base.css";`) || !strings.Contains(got["ui/buttons.css"], "padding: 4px;") {
+		t.Errorf("ui/buttons.css:\n%s", got["ui/buttons.css"])
+	}
+	// The placeholder took its extender, so the partial is written.
+	if !strings.Contains(got["ui/_base.css"], ".late {") {
+		t.Errorf("ui/_base.css:\n%s", got["ui/_base.css"])
+	}
+
+	for _, want := range []struct{ kind, substr string }{
+		{"import", "_vars.styl emits no CSS"},
+		{"import", "inside a rule or at-rule"},
+		{"hoisted", "@import of late.css moved to the top"},
+	} {
+		if !hasNote(res, want.kind, want.substr) {
+			t.Errorf("missing %s note %q in %v", want.kind, want.substr, res.Notes)
+		}
+	}
+}
+
+// TestMigrateSplitNames: a source outside the entry's directory goes under
+// _external/, a name collision is numbered, and TokensFile is honored.
+func TestMigrateSplitNames(t *testing.T) {
+	fsys := fstest.MapFS{
+		"app/main.styl":      {Data: []byte("@import \"../lib/a\"\n@import \"b\"\nc = 1px\n.m\n  x c\n")},
+		"lib/a.styl":         {Data: []byte(".a\n  x 1\n")},
+		"app/b.styl":         {Data: []byte(".b\n  x 1\n")},
+		"app/theme/vars.css": {Data: []byte("")},
+	}
+	res, err := styl.MigrateFile("app/main.styl", styl.Options{FS: fsys},
+		styl.MigrateOptions{Split: true, NoNotes: true, TokensFile: "b.css"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range res.Files {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"main.css", "b.css", "_external/a.css", "b-2.css"}; !slices.Equal(paths, want) {
+		t.Errorf("files = %v, want %v", paths, want)
+	}
+	if !strings.Contains(res.CSS, `@import "_external/a.css";`) || !strings.Contains(res.CSS, `@import "b-2.css";`) {
+		t.Errorf("main.css:\n%s", res.CSS)
+	}
+}
+
+// TestMigrateSplitRepeatImport: a plain second @import of a file already
+// written out is inlined, noted.
+func TestMigrateSplitRepeatImport(t *testing.T) {
+	fsys := fstest.MapFS{
+		"main.styl": {Data: []byte("@import \"a\"\n@import \"a\"\n")},
+		"a.styl":    {Data: []byte(".a\n  x 1\n")},
+	}
+	res, err := styl.MigrateFile("main.styl", styl.Options{FS: fsys}, styl.MigrateOptions{Split: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.CSS, `@import "a.css";`) || !strings.Contains(res.CSS, ".a {") {
+		t.Errorf("main.css:\n%s", res.CSS)
+	}
+	if !hasNote(res, "import", "imported before as a.css") {
+		t.Errorf("notes: %v", res.Notes)
 	}
 }
