@@ -24,12 +24,24 @@ Under active development -- consider this Alpha. The compiler currently supports
   `fade-out`/`blend`/`transparentify`/`luminosity`/`component`/`hue`/`alpha`/…),
   math (`abs`/`ceil`/`floor`/`round`/`min`/`max`/`pow`/`percentage`/`sin`/`asin`/
   `sum`/`avg`/`odd`/`even`/`remove-unit`/`base-convert`/…), list
-  (`length`/`push`/`pop`/`shift`/`index`/`last`/`join`/`range`/`keys`/`values`/…),
+  (`length`/`push`/`pop`/`shift`/`index`/`last`/`join`/`range`/`keys`/`values`/
+  `merge`/…; `push`/`pop`/`shift`/`unshift` also update the list variable),
   string and path (`unquote`/`quote`/`s`/`substr`/`replace`/`split`/`uppercase`/
   `basename`/`dirname`/`extname`/`pathjoin`/`convert`/…), and type
   (`typeof`/`unit`/`match`/`light`/`dark`/`opposite-position`/`error`), with CSS
-  named-color support. `grayscale()`, `saturate()` and `invert()` with
-  non-color arguments pass through as the CSS filter functions.
+  named-color support. `grayscale()`, `saturate()`, `invert()` and
+  `contrast()` with non-color arguments pass through as the CSS filter
+  functions.
+- **Objects** (hashes): `theme = { bg: #fff, sizes: { sm: 10px } }` (one
+  line or several), `theme.bg` / `theme[key]`, member assignment
+  (`theme.sizes.lg = 20px`), `'bg' in theme`, `for key, val in theme`,
+  `merge`/`extend`, `contrast(fg, bg).ratio`, and `json('tokens.json',
+  { hash: true })` (or one variable per leaf without the option). Objects are
+  shared by reference, as in Stylus; `clone()` copies one.
+- **Context built-ins**: `selector()`, `selectors()`, `selector-exists()`,
+  `current-media()`, `define()`, `lookup()`, `add-property()`, `warn()`
+  (routed to `Options.Warn`) and `+prefix-classes('ui-')` over an indented
+  block
 - String operators: concatenation (`"a" + b`) and sprintf (`"calc(100% - %s)" % x`)
 - Unknown functions pass through as literal CSS (`translateX(10px)`, `url(...)`)
 - **Interpolation** (`{expr}`) in selectors, property names, strings, and identifiers
@@ -64,6 +76,11 @@ Under active development -- consider this Alpha. The compiler currently supports
 - **Critical CSS** (see [Critical CSS](#critical-css-stylprune)): `styl.Prune`
   compiles only the rules a rendered page actually uses
   (`styl.UsedFromHTML(page)`) — per-response inline CSS with no headless browser
+- **Scoped component styles** (see
+  [Scoped component styles](#scoped-component-styles-stylcomponent)):
+  `styl.Component` hashes class and `@keyframes` names per component (CSS
+  Modules semantics, `:global(...)` opt-out), with `styl gen -scoped` for typed
+  constants
 
 See [the roadmap](#roadmap) for what's next.
 
@@ -140,6 +157,7 @@ css, err = styl.CompileFile("styles/app.styl", styl.Options{FS: styles})
 | `SourceMap` | Ask `Build`/`BuildFile` to also produce a source map. |
 | `Globals` | Go values seeded as root-scope variables before the sheet runs (see [Runtime theming](#runtime-theming)). |
 | `CustomProperties` | Variables to expose as CSS custom properties on `:root` (see [Runtime theming](#runtime-theming)). |
+| `Sandbox` | Confine a compile of untrusted source: no OS filesystem, vetted imports, time/step/size budgets (see [Untrusted themes](#untrusted-themes-sandbox)). |
 
 ## Runtime theming
 
@@ -199,6 +217,44 @@ Both options are available on the CLI (`-D name=value`, `-cssvar name`) and
 in the HTTP middleware (`stylserve.Options.Globals` / `.CustomProperties` —
 fixed per engine, so cached output stays valid; run one engine per theme for
 per-tenant CSS).
+
+### Untrusted themes (`Sandbox`)
+
+To compile stylesheets your *users* write (Discourse-style theme editors),
+set `Options.Sandbox`. The compiler is pure Go with no plugin hook, so this is
+a hardening pass rather than a jail:
+
+```go
+css, err := styl.Compile(tenantSrc, styl.Options{
+    FS:      sharedPartials,             // the only filesystem imports can see
+    Globals: tenantTokens,
+    Sandbox: &styl.Sandbox{
+        Context:     r.Context(),        // cancel with the request
+        AllowImport: func(p string) bool { return strings.HasPrefix(p, "shared/") },
+    },
+})
+if errors.Is(err, styl.ErrLimit) {
+    // too expensive, or reached for a file it may not: reject the theme
+}
+```
+
+| Limit | Default | Stops |
+|---|---|---|
+| no OS filesystem | — | `@import` and `CompileFile` read only `Options.FS` (no FS → imports fail) |
+| `AllowImport` | all of `FS` | imports outside an allowlist |
+| `Timeout` / `Context` | 2s | wall-clock runaways |
+| `MaxSteps` | 1,000,000 statements | nested loops (each capped, but they multiply) — deterministic |
+| `MaxValueBytes` | 256 KiB | doubling bombs (`s = s + s`, `l = l l`) |
+| `MaxSourceBytes` | 1 MiB (sheet + imports) | oversized input |
+| `MaxImports` | 256 | import fan-out |
+| `MaxOutputBytes` | 4 MiB (incl. `@extend` grafts) | small sheets that render huge |
+
+`0` means the default, a negative value means unlimited. `warn()` goes to
+`Options.Warn` or is dropped — never to the host's stderr. The sandbox adds
+to limits every compile has (call depth 256, 16384 selectors per rule,
+ranges of 65536). Every entry point honors it (`Compile`, `Build`,
+`CompileMap`, `Extract`, `Prune`, `Component`, `Migrate` and their `*File`
+forms). Errors keep their `file:line:col` position.
 
 ## Typed class names (`styl gen`)
 
@@ -261,6 +317,84 @@ The same data is available programmatically: `styl.Extract` /
 and root variables with their final values, honoring `Globals` and
 `@import`), and `Manifest.GoSource(pkg)` renders the constants file.
 
+## Scoped component styles (`styl.Component`)
+
+`styl.Component` compiles a stylesheet as a component: every class name and
+`@keyframes` name gets a suffix hashed from the source, so two components can
+both style `.title` or animate `fade` without colliding. It is CSS Modules for
+server-rendered Go, with no bundler.
+
+```stylus
+.card
+  padding 1rem
+  animation fade .2s
+  .title
+    font-weight bold
+  & :global(.htmx-request)
+    opacity .5
+
+@keyframes fade
+  from
+    opacity 0
+```
+
+```go
+//go:embed card.styl
+var cardSrc string
+
+var card = must(styl.Component(cardSrc, styl.Options{}))
+
+// card.CSS:
+//   .card_ulwiepau { padding: 1rem; animation: fade_ulwiepau 0.2s; }
+//   .card_ulwiepau .title_ulwiepau { font-weight: bold; }
+//   .card_ulwiepau .htmx-request { opacity: 0.5; }
+//   @keyframes fade_ulwiepau { ... }
+
+b.Div("class", card.Class("card")).R(
+	b.H2("class", card.Class("title")).T("Hello"),
+)
+```
+
+- **Renamed:** `.class` tokens in selectors (including inside `:not(...)`,
+  `@media`, `@extend` grafts and merged duplicates), `@keyframes` names
+  (vendor-prefixed too), and references to those keyframes in `animation` /
+  `animation-name` values.
+- **Left alone:** element IDs, type and attribute selectors, and anything in
+  `:global(...)`. The wrapper is dropped: `.card :global(.is-open)` becomes
+  `.card_x .is-open`. A nested selector starting with `:` attaches to its
+  parent, so write `& :global(.x)` for a descendant. Animations naming
+  keyframes defined elsewhere keep their name.
+- **The suffix** is the first 40 bits of the SHA-256 of the source text, as 8
+  base32 characters. `Options` doesn't feed it, so per-request `Globals`
+  never change the names. Editing the file does change them.
+
+`Scoped.Names` maps each local name to its scoped form. `Scoped.Class(names...)`
+joins them for a `class` attribute and passes unknown names through, so you
+can mix in global utility classes.
+
+For compile-checked references, `styl gen -scoped` runs `styl.ComponentFile`
+and feeds its `Manifest` (with `Manifest.Scoped` set) through the same
+`GoSource` renderer:
+
+```go
+//go:generate go run github.com/rohanthewiz/go-styl/cmd/styl gen -scoped -pkg cardcss -o cardcss/gen.go -css card.css card.styl
+```
+
+```go
+const (
+	Card        = "card_ulwiepau" // card
+	HtmxRequest = "htmx-request"
+	Title       = "title_ulwiepau" // title
+)
+const (
+	FadeAnim = "fade_ulwiepau" // fade
+)
+```
+
+The hash depends only on the source text, so a runtime
+`styl.Component(cardSrc, …)` of the same embedded file produces exactly these
+names. (The names shown are the real ones for `card.styl` exactly as above.) `-css` also writes the scoped CSS, for serving it as a static file.
+
 ## Critical CSS (`styl.Prune`)
 
 Because HTML rendering and CSS compilation both run in-process, go-styl can do
@@ -316,6 +450,195 @@ http.ListenAndServe(":8080", handler)
 (sniffing the type when the handler sets none); anything else, such as JSON,
 event streams or gzip, passes through unbuffered. A rewritten page drops its
 `Content-Length` and `ETag`.
+
+## Migrating off Stylus (`styl migrate`)
+
+`styl migrate` converts a Stylus sheet into modern CSS you can keep editing
+by hand. Unlike a compile, it keeps the sheet's structure:
+
+- **Nesting stays nesting**, as native CSS nesting. A bare nested `:hover`
+  becomes `&:hover`, since go-styl attaches it (CSS nesting would read a
+  bare `:hover` as a descendant).
+- **Root-level variables become custom properties** on `:root`, and direct
+  references become `var(--name)`. Arithmetic stays live as `calc()` when
+  the units allow it (`base * 10` → `calc(var(--base) * 10)`). That holds
+  in `:root` too (`mid = top * 2` → `--mid: calc(var(--top) * 2)`). Only
+  variables the output reads get a property.
+- **Stylus-only constructs are resolved in place**: mixins expand, `for`
+  loops unroll, `if` picks its branch, `@extend` adds the extending
+  selectors to the target rule's list, and `.styl` imports are inlined.
+- **Each of those spots gets a `/* styl-migrate: … */` comment**, and the
+  same notes go to stderr as `file:line:col: kind: msg`, so a reviewer can
+  find what changed shape.
+
+```stylus
+primary = #0af
+base = 8px
+
+button(bg)
+  background bg
+  &:hover
+    background darken(bg, 10%)
+
+.card
+  color primary
+  width base * 10
+  :hover
+    color red
+  &__body
+    padding base
+  .btn
+    button(primary)
+```
+
+`styl migrate card.styl`:
+
+```css
+/* Migrated from card.styl by styl migrate. Review each styl-migrate note. */
+
+:root {
+  --primary: #0af;
+  --base: 8px;
+}
+
+.card {
+  color: var(--primary);
+  width: calc(var(--base) * 10);
+
+  &:hover {
+    color: red;
+  }
+
+  .btn {
+    /* styl-migrate: mixin: expanded button(var(--primary)) */
+    background: var(--primary);
+
+    &:hover {
+      /* styl-migrate: frozen: background computed at migrate time from --primary; it won't follow runtime changes */
+      background: #0099e6;
+    }
+  }
+}
+
+/* styl-migrate: hoisted: "&__body" can't nest in CSS; moved after the enclosing block as .card__body (check cascade order) */
+.card__body {
+  padding: var(--base);
+}
+```
+
+Some things CSS nesting can't express. They are written out in full after
+the enclosing block (wrapped in the same `@media`), with a `hoisted` note:
+
+- `&` concatenation such as BEM `&__elem` or `&-mod`. CSS `&` is a whole
+  selector, never a name prefix.
+- Rules nested under a pseudo-element (`a::before { &:hover … }`).
+- `@keyframes`, `@font-face` and `@page` inside a rule.
+
+A value computed from a variable (`darken(primary, 10%)`, `8px + 2`, which
+is not valid `calc()`) is correct but fixed. It gets a `frozen` note because
+it won't follow `--primary` at runtime.
+
+Library: `styl.Migrate(src, opts, styl.MigrateOptions{})` or `MigrateFile`
+returns `MigrateResult{CSS, Notes, Deps}`. `MigrateOptions.NoNotes` drops
+the inline comments (the notes are still returned). `NoVars` inlines every
+variable. `Options` supplies import resolution and `Globals`, which inline
+as fixed inputs.
+
+Two limits apply. Stylus comments are not carried over, because the parser
+drops them. Imports are inlined into one output file.
+
+Every example and fixture sheet is checked in `TestMigrateRoundTrip`. The
+migrated CSS, with nesting, `var()` and `calc()` resolved, must declare
+exactly what `Compile` declares.
+
+## Formatting (`styl fmt`)
+
+`styl fmt` gives Stylus a gofmt. It rewrites whitespace and nothing else:
+
+- indentation becomes two spaces per nesting level; brace syntax gets its
+  level from the braces
+- runs of spaces inside a line collapse to one, except in strings and
+  comments
+- trailing whitespace goes, blank-line runs collapse to one, and the file
+  ends in exactly one newline
+- comments stay, re-indented with the code around them
+
+```shell
+go run ./cmd/styl fmt app.styl          # formatted source to stdout
+go run ./cmd/styl fmt -w styles/*.styl  # rewrite changed files in place
+go run ./cmd/styl fmt -l styles/*.styl  # list files that aren't formatted (CI)
+go run ./cmd/styl fmt < app.styl        # stdin → stdout
+```
+
+Every result is checked before it is returned. It must parse to the same
+stylesheet as the input, source positions aside. If a layout confuses the
+re-indent, fmt falls back to fixing only trailing whitespace and blank
+lines. If even that would change the meaning, it reports an error and
+leaves the file alone. A file that doesn't parse is not formatted, and its
+parse error is reported instead.
+
+A continuation line (after a trailing comma, or inside a multi-line object
+literal) keeps its offset from the first line of its statement, so
+hand-aligned value lists stay aligned. In a mixed-syntax file, lines outside
+every brace keep their indentation, because that indentation is structural.
+
+Library: `styl.Format(src)`.
+
+## Editor support (`styl-lsp`)
+
+`styl-lsp` is a Language Server Protocol server built on the compiler. It
+is a single static binary with no dependencies:
+
+```shell
+go install github.com/rohanthewiz/go-styl/cmd/styl-lsp@latest
+```
+
+It provides:
+
+- **Diagnostics as you type**: the real compile's errors, with did-you-mean
+  hints. An error inside an imported file is reported on the `@import`
+  line. `warn()` output shows as warnings.
+- **Completion** of variables and mixins, including those from imported
+  files, plus built-ins and keywords. A root variable's detail is its
+  computed value.
+- **Hover** showing a variable's definition and its computed value
+  (`gap = pad * 3` → `12px`), or a mixin's signature.
+- **Go to definition** across `@import`/`@require`. Lookup is scope-aware,
+  so a local or a parameter shadows a global.
+- **Document symbols** (the outline): selectors, at-rules, mixins and
+  variables.
+- **Color swatches** for hex literals, with a color picker that writes hex
+  or `rgba()`.
+- **Formatting**, identical to `styl fmt`.
+
+Each analysis compiles in a [`Sandbox`](#untrusted-themes-sandbox) with a
+1s budget, so a half-typed `for` over a huge range is cut off with a
+warning instead of hanging the editor. While the text doesn't parse,
+completion, hover and definition keep working from the last good parse.
+
+Point any LSP client at it for `*.styl`. Neovim:
+
+```lua
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "stylus",
+  callback = function() vim.lsp.start({ name = "styl", cmd = { "styl-lsp" } }) end,
+})
+```
+
+Helix (`languages.toml`):
+
+```toml
+[language-server.styl-lsp]
+command = "styl-lsp"
+
+[[language]]
+name = "stylus"
+scope = "source.stylus"
+file-types = ["styl"]
+language-servers = ["styl-lsp"]
+```
+
+`-log <file>` sends the server's log to a file (default: stderr).
 
 ## Serving over HTTP
 
@@ -407,6 +730,9 @@ go run ./cmd/styl -o out.css -sourcemap input.styl  # also writes out.css.map
 go run ./cmd/styl -D primary=#0af -D 'pad=2 * 8px' input.styl  # define globals
 go run ./cmd/styl -cssvar primary -cssvar pad input.styl       # expose as --vars
 go run ./cmd/styl gen -pkg css -o css_gen.go input.styl        # Go constants file
+go run ./cmd/styl gen -scoped -css out.css input.styl          # scoped component: hashed names + CSS
+go run ./cmd/styl migrate -o out.css input.styl                # Stylus → modern nested CSS
+go run ./cmd/styl fmt -w input.styl                            # format in place
 ```
 
 `-sourcemap` requires `-o`; it writes `<out>.map` next to the CSS and appends a
@@ -414,7 +740,16 @@ go run ./cmd/styl gen -pkg css -o css_gen.go input.styl        # Go constants fi
 [Runtime theming](#runtime-theming)). The `gen` subcommand emits typed
 class/ID/keyframes/variable constants instead of CSS (see
 [Typed class names](#typed-class-names-styl-gen)); it takes `-o`, `-pkg`
-(default `css`), and `-D`.
+(default `css`), and `-D`. `-scoped` compiles the sheet as a scoped
+component, so class and keyframes constants hold the hashed names, and
+`-css <file>` also writes the scoped CSS (see
+[Scoped component styles](#scoped-component-styles-stylcomponent)).
+`migrate` converts the sheet to modern nested CSS for leaving Stylus (see
+[Migrating off Stylus](#migrating-off-stylus-styl-migrate)). It takes `-o`,
+`-no-notes` (omit the inline review comments), `-no-vars` (inline all
+variables), `-q` (don't list the notes on stderr) and `-D`. `fmt` formats
+source (see [Formatting](#formatting-styl-fmt)). It takes `-w` (rewrite
+files in place) and `-l` (list unformatted files).
 
 ## Example
 
@@ -536,8 +871,9 @@ this README rely on them.
   `{major}` while `major` is a variable differs (escape it as `\{major}`).
 - **Single-line functions** `double(x) = x * 2`. Stylus doesn't read this
   as a definition and leaves `double(15px)` in the output.
-- **`Options.Globals` / `Options.CustomProperties`** (runtime theming), and
-  the extra-compression `MergeDuplicates` pass.
+- **`Options.Globals` / `Options.CustomProperties`** (runtime theming),
+  `Options.Sandbox` (untrusted themes), and the extra-compression
+  `MergeDuplicates` pass.
 
 The difftest pins each one in `difftest/known_diffs.txt`.
 
@@ -566,6 +902,22 @@ CSS, go-styl chooses differently on purpose:
   `:hover` gives `.btn:hover`, the same as `&:hover`. Stylus reads it as a
   descendant (`.btn :hover`, any hovered element inside `.btn`), which is
   almost never intended. Write `& :hover` for the descendant form.
+- **`current-media()` returns the query as written**
+  (`'@media screen and (max-width: 100px)'`). Stylus 0.64 wraps each part in
+  extra parentheses (`'@media (screen and (max-width: (100px)))'`).
+  **`selector-exists()`** only sees rules compiled before the call (0.64
+  crashes on nested rules).
+- **Lists stay values.** `push(l, x)` (and `pop`/`shift`/`unshift`) rebind the
+  variable `l`, as in Stylus, but `push` returns the new list rather than its
+  length, and after `b = a`, `push(b, x)` changes only `b` (Stylus mutates
+  the one list both names share). Objects, by contrast, are shared by
+  reference exactly as in Stylus.
+- **An object is not a property value.** `width theme` is an error pointing
+  at `theme.key`; Stylus prints a JSON-like blob.
+- **`in` keeps CSS meaning in values.** In a property value or function
+  arguments, `x in word` where `word` is not a variable stays text, so
+  `linear-gradient(to right in oklch, …)` compiles as written; Stylus would
+  evaluate it as a membership test.
 - **Comment lines never affect structure.** In Stylus, the indentation of a
   `//` line counts: a column-0 comment between `m()` and its body ends the
   definition (the body lands at the root), and a comment indented deeper
@@ -583,7 +935,7 @@ CSS, go-styl chooses differently on purpose:
 ```
 
 Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `eval`,
-`builtin`, `css`.
+`builtin`, `css`, and `lsp` (the language server behind `cmd/styl-lsp`).
 
 ## Roadmap
 
@@ -609,6 +961,12 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
   (`styl.Extract` + `Manifest.GoSource`)
 - [x] **M15** Critical CSS: `styl.Prune` / `PruneFile` + `UsedFromHTML` — per-response
   stylesheets containing only the rules the rendered page uses
+- [x] Scoped component styles: `styl.Component` / `ComponentFile` (hashed class and
+  keyframes names, `:global(...)`), `styl gen -scoped`
+- [x] `styl migrate`: Stylus → modern CSS (native nesting, `:root` custom properties,
+  `calc()`, review notes for everything resolved at migrate time)
+- [x] `styl fmt` (`styl.Format`) and `styl-lsp`, a language server: diagnostics, completion,
+  hover with computed values, go-to-definition across imports, symbols, color swatches
 - [ ] Future: value-level source mapping, deeper compress parity, more built-ins
 
 ## License

@@ -221,16 +221,17 @@ func parseArgs(inner []token.Token, line int) ([]ast.Expr, error) {
 	return args, nil
 }
 
-// splitTopLevel splits tokens on sep at paren/bracket depth zero.
+// splitTopLevel splits tokens on sep at paren/bracket/brace depth zero (an
+// object literal's commas separate its pairs, not arguments).
 func splitTopLevel(toks []token.Token, sep token.Kind) [][]token.Token {
 	var out [][]token.Token
 	var cur []token.Token
 	depth := 0
 	for _, t := range toks {
 		switch t.Kind {
-		case token.LPAREN, token.LBRACKET:
+		case token.LPAREN, token.LBRACKET, token.LBRACE:
 			depth++
-		case token.RPAREN, token.RBRACKET:
+		case token.RPAREN, token.RBRACKET, token.RBRACE:
 			depth--
 		}
 		if depth == 0 && t.Kind == sep {

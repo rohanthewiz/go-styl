@@ -64,8 +64,11 @@ type FuncDef struct {
 // MixinCall invokes a function/mixin in statement position (emitting its body),
 // e.g. `clearfix()` or `+button(blue)`.
 type MixinCall struct {
-	Name      string
-	Args      []Expr
+	Name string
+	Args []Expr
+	// Block is the indented body passed to a block mixin call
+	// (`+prefix-classes('ui-')` followed by nested rules), nil otherwise.
+	Block     []Stmt
 	Line, Col int // 1-based source position
 }
 
@@ -88,6 +91,18 @@ type For struct {
 	Value     string // value variable name
 	Iterable  Expr
 	Body      []Stmt
+	Line, Col int // 1-based source position
+}
+
+// MemberAssign stores into an object: `obj.key = v`, `obj[k] = v`, or a
+// deeper path (`theme.colors.bg = #fff`). Target is the *Member or *Index
+// expression naming the slot; everything left of the final step must
+// evaluate to an object. Op is token.ASSIGN or token.ASSIGNQ (`?=` only
+// stores when the key is absent).
+type MemberAssign struct {
+	Target    Expr
+	Op        token.Kind
+	Value     Expr
 	Line, Col int // 1-based source position
 }
 
@@ -145,6 +160,8 @@ func Pos(s Stmt) (line, col int) {
 		return n.Line, n.Col
 	case *Assignment:
 		return n.Line, n.Col
+	case *MemberAssign:
+		return n.Line, n.Col
 	case *FuncDef:
 		return n.Line, n.Col
 	case *MixinCall:
@@ -167,19 +184,20 @@ func Pos(s Stmt) (line, col int) {
 	return 0, 0
 }
 
-func (*Stylesheet) stmtNode()  {}
-func (*RuleSet) stmtNode()     {}
-func (*Declaration) stmtNode() {}
-func (*Assignment) stmtNode()  {}
-func (*FuncDef) stmtNode()     {}
-func (*MixinCall) stmtNode()   {}
-func (*If) stmtNode()          {}
-func (*For) stmtNode()         {}
-func (*Return) stmtNode()      {}
-func (*ExprStmt) stmtNode()    {}
-func (*Extend) stmtNode()      {}
-func (*Import) stmtNode()      {}
-func (*AtRule) stmtNode()      {}
+func (*Stylesheet) stmtNode()   {}
+func (*RuleSet) stmtNode()      {}
+func (*Declaration) stmtNode()  {}
+func (*Assignment) stmtNode()   {}
+func (*MemberAssign) stmtNode() {}
+func (*FuncDef) stmtNode()      {}
+func (*MixinCall) stmtNode()    {}
+func (*If) stmtNode()           {}
+func (*For) stmtNode()          {}
+func (*Return) stmtNode()       {}
+func (*ExprStmt) stmtNode()     {}
+func (*Extend) stmtNode()       {}
+func (*Import) stmtNode()       {}
+func (*AtRule) stmtNode()       {}
 
 // --- Expressions ---
 
@@ -213,6 +231,12 @@ type Binary struct {
 	// performed: the value renders as "L/R" (think font: 14px/1.5).
 	// Parenthesize to divide: (x / 2).
 	Literal bool
+	// InText marks an `in` test inside a property value or call arguments.
+	// If its right operand is a bare word (an identifier that is not a
+	// variable), the expression is kept as the text `L in R` rather than
+	// tested, since CSS uses `in` as a keyword there:
+	// linear-gradient(to right in oklch, red, blue).
+	InText bool
 }
 
 // Call is a function/mixin invocation, e.g. rgba(0, 0, 0, 0.5).
@@ -236,6 +260,26 @@ type Index struct {
 	Index Expr
 }
 
+// Member reads an object key by name: obj.key (the key is the literal name,
+// never a variable).
+type Member struct {
+	X    Expr
+	Name string
+}
+
+// ObjectPair is one `key: value` entry of an object literal. Key is the
+// literal key text: a bare name as written, or a quoted key's contents.
+type ObjectPair struct {
+	Key   string
+	Value Expr
+}
+
+// Object is an object literal, `{a: 1, 'b-c': 2px 3px}`. Evaluating it
+// builds a fresh value.Hash each time.
+type Object struct {
+	Pairs []ObjectPair
+}
+
 func (*NumberLit) exprNode() {}
 func (*ColorLit) exprNode()  {}
 func (*StringLit) exprNode() {}
@@ -245,3 +289,5 @@ func (*Binary) exprNode()    {}
 func (*Call) exprNode()      {}
 func (*List) exprNode()      {}
 func (*Index) exprNode()     {}
+func (*Member) exprNode()    {}
+func (*Object) exprNode()    {}

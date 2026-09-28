@@ -25,6 +25,8 @@ func init() {
 	register("keys", pairPart("keys", 0))
 	register("values", pairPart("values", 1))
 	register("clone", clone)
+	register("merge", merge)
+	register("extend", merge)
 }
 
 // asItems returns the elements a value represents as a list: a List's items, an
@@ -48,6 +50,10 @@ func length(args []value.Value) (value.Value, error) {
 	// 3). Anything else counts list items; a lone value is a one-item list.
 	if s, ok := args[0].(*value.Str); ok {
 		return &value.Number{Num: float64(utf8.RuneCountInString(s.Val))}, nil
+	}
+	// An object counts its keys.
+	if h, ok := args[0].(*value.Hash); ok {
+		return &value.Number{Num: float64(h.Len())}, nil
 	}
 	return &value.Number{Num: float64(len(asItems(args[0])))}, nil
 }
@@ -117,8 +123,15 @@ func join(args []value.Value) (value.Value, error) {
 	} else {
 		sepStr = args[0].CSS(true)
 	}
+	// Items join by their text: a string contributes its contents without
+	// quotes, as in Stylus's join (which builds the result by string
+	// concatenation), so join('|', 'a' 'b') is a|b.
 	parts := make([]string, 0)
 	for _, it := range asItems(args[1]) {
+		if str, isStr := it.(*value.Str); isStr {
+			parts = append(parts, str.Val)
+			continue
+		}
 		parts = append(parts, it.CSS(true))
 	}
 	return &value.Str{Val: strings.Join(parts, sepStr), Quote: 0}, nil
@@ -209,15 +222,26 @@ func listSeparator(args []value.Value) (value.Value, error) {
 	return &value.Str{Val: sep, Quote: '\''}, nil
 }
 
-// pairPart implements keys/values over a list of pairs:
-// keys((a 1) (b 2)) is `a b`, values(...) is `1 2`. Stylus also accepts an
-// object (hash) here; go-styl has no hash type.
+// pairPart implements keys/values over an object or a list of pairs:
+// keys((a 1) (b 2)) is `a b`, values(...) is `1 2`. An object's keys come
+// back as quoted strings ('a' 'b'), as in Stylus, in insertion order.
 func pairPart(fn string, i int) Func {
 	return func(args []value.Value) (value.Value, error) {
 		if err := wantArgs(fn, args, 1); err != nil {
 			return nil, err
 		}
 		var out []value.Value
+		if h, ok := args[0].(*value.Hash); ok {
+			for _, k := range h.Keys() {
+				if i == 0 {
+					out = append(out, &value.Str{Val: k, Quote: '\''})
+				} else {
+					v, _ := h.Get(k)
+					out = append(out, v)
+				}
+			}
+			return &value.List{Items: out}, nil
+		}
 		for _, pair := range asItems(args[0]) {
 			items := asItems(pair)
 			if len(items) <= i {
@@ -229,12 +253,67 @@ func pairPart(fn string, i int) Func {
 	}
 }
 
-// clone returns its argument. Stylus deep-copies so a later push() can't
-// change the original; go-styl values are never mutated, so a copy is not
-// needed.
+// clone returns a copy of its argument. Objects are the only mutable values
+// (see value.Hash), so they are deep-copied; anything else is returned as-is,
+// since go-styl never mutates it in place (push() on a variable rebinds the
+// variable to a new list).
 func clone(args []value.Value) (value.Value, error) {
 	if err := wantArgs("clone", args, 1); err != nil {
 		return nil, err
 	}
+	if h, ok := args[0].(*value.Hash); ok {
+		return h.Clone(), nil
+	}
 	return args[0], nil
+}
+
+// merge(dest, src…, [deep]) (alias extend) copies each src object's keys into
+// dest, later sources winning, and returns dest. dest is changed in place, so
+// every variable holding it sees the new keys, as in Stylus. A trailing true
+// merges deeply: where both sides hold an object under a key, the source
+// object is merged into dest's instead of replacing it.
+//
+//	merge({a: 1, b: {x: 1}}, {b: {y: 2}})        → {a: 1, b: {y: 2}}
+//	merge({a: 1, b: {x: 1}}, {b: {y: 2}}, true)  → {a: 1, b: {x: 1, y: 2}}
+func merge(args []value.Value) (value.Value, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("merge() expects at least 1 argument")
+	}
+	dest, ok := args[0].(*value.Hash)
+	if !ok {
+		return nil, fmt.Errorf("merge() argument 1 must be an object, got %s", args[0].TypeName())
+	}
+	srcs := args[1:]
+	deep := false
+	if n := len(srcs); n > 0 {
+		if b, isBool := srcs[n-1].(*value.Bool); isBool {
+			deep = b.Val
+			srcs = srcs[:n-1]
+		}
+	}
+	for i, a := range srcs {
+		src, ok := a.(*value.Hash)
+		if !ok {
+			return nil, fmt.Errorf("merge() argument %d must be an object, got %s", i+2, a.TypeName())
+		}
+		mergeInto(dest, src, deep)
+	}
+	return dest, nil
+}
+
+// mergeInto copies src's keys into dest (see merge).
+func mergeInto(dest, src *value.Hash, deep bool) {
+	for _, k := range src.Keys() {
+		sv, _ := src.Get(k)
+		if deep {
+			dv, _ := dest.Get(k)
+			dh, dok := dv.(*value.Hash)
+			sh, sok := sv.(*value.Hash)
+			if dok && sok {
+				mergeInto(dh, sh, true)
+				continue
+			}
+		}
+		dest.Set(k, sv)
+	}
 }

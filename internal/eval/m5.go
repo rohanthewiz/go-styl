@@ -125,7 +125,11 @@ func (ev *evaluator) evalAtNested(header string, body []ast.Stmt, ctx *execCtx, 
 	atr := &css.AtRule{Header: ev.compactAtHeader(header), Pos: pos}
 	*ctx.sink = append(*ctx.sink, atr)
 
-	child := &execCtx{scope: ctx.scope.Child(), parents: ctx.parents, sink: &atr.Nodes, dir: ctx.dir}
+	child := &execCtx{scope: ctx.scope.Child(), parents: ctx.parents, sink: &atr.Nodes, dir: ctx.dir,
+		file: ctx.file, mixin: ctx.mixin, stack: ctx.stack, media: ctx.media, prefix: ctx.prefix}
+	if strings.HasPrefix(header, "@media") {
+		child.media = header
+	}
 	if len(ctx.parents) > 0 {
 		rule := &css.Rule{Selector: joinSelectors(ctx.parents, ev.opts.Pretty), Selectors: ctx.parents, Pos: pos}
 		*child.sink = append(*child.sink, rule)

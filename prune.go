@@ -71,6 +71,10 @@ func UsedFromHTML(html string) Used {
 //
 //	css, err := styl.Prune(src, styl.UsedFromHTML(page), opts)
 func Prune(src string, used Used, opts Options) (string, error) {
+	sb, err := opts.sandbox(len(src))
+	if err != nil {
+		return "", compileErr(err, opts.Filename)
+	}
 	sheet, err := parser.Parse(src)
 	if err != nil {
 		return "", compileErr(err, opts.Filename)
@@ -84,6 +88,8 @@ func Prune(src string, used Used, opts Options) (string, error) {
 		FS:               opts.FS,
 		Globals:          opts.Globals,
 		CustomProperties: opts.CustomProperties,
+		Warn:             opts.Warn,
+		Sandbox:          sb,
 	}, css.UsedNames{
 		Classes: nameSet(used.Classes),
 		IDs:     nameSet(used.IDs),

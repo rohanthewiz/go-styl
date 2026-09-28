@@ -65,3 +65,7 @@ func stripComments(src string) string {
 }
 
 func isSpace(r rune) bool { return r == ' ' || r == '\t' || r == '\r' }
+
+// StripComments is stripComments for tooling (the language server scans
+// code for color literals without matching inside comments).
+func StripComments(src string) string { return stripComments(src) }

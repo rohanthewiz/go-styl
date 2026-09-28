@@ -213,6 +213,12 @@ func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 		return nil
 	}
 
+	// A sandbox has no OS filesystem: .styl imports resolve only through
+	// the host-provided Options.FS. Refuse before resolveImport, whose OS
+	// branch would Stat/Glob the real disk and so leak file existence.
+	if ev.opts.Sandbox != nil && ev.opts.FS == nil {
+		return limitErr("@import %q: imports need Options.FS in a sandbox", s.Path)
+	}
 	files, err := resolveImport(ev.opts.FS, ctx.dir, s.Path, ev.opts.IncludePaths)
 	if err != nil {
 		return err
@@ -223,6 +229,9 @@ func (ev *evaluator) evalImport(s *ast.Import, ctx *execCtx) error {
 				continue
 			}
 			ev.required[abs] = true
+		}
+		if err := ev.checkImport(s.Path, abs); err != nil {
+			return err
 		}
 		if err := ev.importFile(s.Path, abs, ctx); err != nil {
 			return err
@@ -242,6 +251,9 @@ func (ev *evaluator) importFile(imp, abs string, ctx *execCtx) error {
 	data, err := ev.readFile(abs)
 	if err != nil {
 		return fmt.Errorf("@import %q: %w", imp, err)
+	}
+	if err := ev.chargeSource(imp, len(data)); err != nil {
+		return err
 	}
 	sheet, err := parser.Parse(string(data))
 	if err != nil {

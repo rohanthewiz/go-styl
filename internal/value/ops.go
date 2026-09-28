@@ -165,6 +165,10 @@ func Truthy(v Value) bool {
 		return x.Num != 0
 	case *Str:
 		return x.Val != ""
+	case *Hash:
+		// An empty object is falsy, as in Stylus (Object#toBoolean is its
+		// length).
+		return x.Len() > 0
 	case nil:
 		return false
 	default:

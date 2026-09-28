@@ -43,6 +43,18 @@ func (s *Scope) Get(name string) (value.Value, bool) {
 	return nil, false
 }
 
+// Owner returns the scope in the chain that defines the variable name, or nil.
+// Rebinding a variable where it lives (rather than shadowing it in the
+// current scope) is how list-mutating built-ins update it.
+func (s *Scope) Owner(name string) *Scope {
+	for sc := s; sc != nil; sc = sc.parent {
+		if _, ok := sc.vars[name]; ok {
+			return sc
+		}
+	}
+	return nil
+}
+
 // Set binds a variable in the current scope.
 func (s *Scope) Set(name string, v value.Value) {
 	s.vars[name] = v

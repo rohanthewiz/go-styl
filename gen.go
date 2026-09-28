@@ -36,12 +36,21 @@ type Manifest struct {
 	IDs       []string
 	Keyframes []string
 	Vars      []Var
+	// Scoped maps local class and keyframes names to their scoped forms when
+	// the manifest comes from Component; nil otherwise. GoSource then emits
+	// the scoped name as each constant's value, still naming the constant
+	// after the local name (Card = "card_k3xqa2mf").
+	Scoped map[string]string
 }
 
 // Extract evaluates Stylus source and returns its Manifest instead of CSS.
 // Options is honored the same way as Compile (Globals, IncludePaths, FS, ...),
 // so the manifest reflects exactly what a compile with the same options emits.
 func Extract(src string, opts Options) (*Manifest, error) {
+	sb, err := opts.sandbox(len(src))
+	if err != nil {
+		return nil, compileErr(err, opts.Filename)
+	}
 	sheet, err := parser.Parse(src)
 	if err != nil {
 		return nil, compileErr(err, opts.Filename)
@@ -55,10 +64,16 @@ func Extract(src string, opts Options) (*Manifest, error) {
 		FS:               opts.FS,
 		Globals:          opts.Globals,
 		CustomProperties: opts.CustomProperties,
+		Sandbox:          sb,
 	})
 	if err != nil {
 		return nil, compileErr(err, opts.Filename)
 	}
+	return manifestFrom(em), nil
+}
+
+// manifestFrom converts the evaluator's manifest to the public type.
+func manifestFrom(em *eval.Manifest) *Manifest {
 	m := &Manifest{
 		Classes:   em.Classes,
 		IDs:       em.IDs,
@@ -67,7 +82,7 @@ func Extract(src string, opts Options) (*Manifest, error) {
 	for _, v := range em.Vars {
 		m.Vars = append(m.Vars, Var(v))
 	}
-	return m, nil
+	return m
 }
 
 // ExtractFile extracts the Manifest of the Stylus file at path (from
@@ -99,6 +114,10 @@ func ExtractFile(path string, opts Options) (*Manifest, error) {
 // keyframes names, and variables get ID/Anim/Var suffixes so the four groups
 // cannot shadow each other. Two names mapping to the same identifier is an
 // error naming both.
+//
+// For a scoped manifest (Scoped set, from Component), classes and keyframes
+// names that were renamed hold the scoped name, with the local name as a
+// trailing comment.
 func (m *Manifest) GoSource(pkg string) ([]byte, error) {
 	if pkg == "" {
 		pkg = "css"
@@ -118,6 +137,23 @@ func (m *Manifest) GoSource(pkg string) ([]byte, error) {
 	fmt.Fprintf(&b, "package %s\n", pkg)
 
 	seen := map[string]string{} // Go identifier -> "kind \"css-name\"" that claimed it
+	// scopedValues returns the constant values for a class/keyframes group:
+	// nil (value = name) for an unscoped manifest, else each name's scoped
+	// form, falling back to the name itself for :global-only classes.
+	scopedValues := func(names []string) []string {
+		if m.Scoped == nil {
+			return nil
+		}
+		vals := make([]string, len(names))
+		for i, n := range names {
+			if s, ok := m.Scoped[n]; ok {
+				vals[i] = s
+			} else {
+				vals[i] = n
+			}
+		}
+		return vals
+	}
 	writeGroup := func(comment, kind, suffix string, names []string, values []string) error {
 		if len(names) == 0 {
 			return nil
@@ -134,13 +170,13 @@ func (m *Manifest) GoSource(pkg string) ([]byte, error) {
 				return serr.F("styl gen: %s and %s both map to Go constant %s", prev, desc, ident)
 			}
 			seen[ident] = desc
-			note := ""
-			if values != nil {
-				note = " // " + name
-			}
-			val := name
-			if values != nil {
-				val = values[i]
+			// The trailing comment names the source identifier whenever the
+			// constant's value is something else (a variable's value, a
+			// scoped class); a :global class in a scoped manifest keeps its
+			// own name and needs none.
+			val, note := name, ""
+			if values != nil && values[i] != name {
+				val, note = values[i], " // "+name
 			}
 			fmt.Fprintf(&b, "\t%s = %s%s\n", ident, strconv.Quote(val), note)
 		}
@@ -153,13 +189,13 @@ func (m *Manifest) GoSource(pkg string) ([]byte, error) {
 	for i, v := range m.Vars {
 		varNames[i], varValues[i] = v.Name, v.Value
 	}
-	if err := writeGroup("Class names.", "class", "", m.Classes, nil); err != nil {
+	if err := writeGroup("Class names.", "class", "", m.Classes, scopedValues(m.Classes)); err != nil {
 		return nil, err
 	}
 	if err := writeGroup("Element IDs (suffix ID).", "ID", "ID", m.IDs, nil); err != nil {
 		return nil, err
 	}
-	if err := writeGroup("Keyframes animation names (suffix Anim).", "keyframes name", "Anim", m.Keyframes, nil); err != nil {
+	if err := writeGroup("Keyframes animation names (suffix Anim).", "keyframes name", "Anim", m.Keyframes, scopedValues(m.Keyframes)); err != nil {
 		return nil, err
 	}
 	if err := writeGroup("Variable values at compile time (suffix Var).", "variable", "Var", varNames, varValues); err != nil {

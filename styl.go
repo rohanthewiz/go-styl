@@ -72,6 +72,14 @@ type Options struct {
 	OutFile string
 	// SourceMap asks Build/BuildFile to also produce a source map.
 	SourceMap bool
+	// Warn receives the message of each warn('…') call in the stylesheet.
+	// When nil, warnings are printed to stderr as "Warning: …", like the
+	// stylus CLI (or dropped under a Sandbox). Compilation continues either
+	// way.
+	Warn func(msg string)
+	// Sandbox, when set, confines the compile for untrusted source: no OS
+	// filesystem, vetted imports, and time/step/size budgets. See Sandbox.
+	Sandbox *Sandbox
 }
 
 // Result is the outcome of a Build: the CSS, the optional source map, and the
@@ -93,6 +101,10 @@ type Result struct {
 // with serr, carrying "file", "line", and "col" as structured attributes for
 // serr-aware loggers.
 func Compile(src string, opts Options) (string, error) {
+	sb, err := opts.sandbox(len(src))
+	if err != nil {
+		return "", compileErr(err, opts.Filename)
+	}
 	sheet, err := parser.Parse(src)
 	if err != nil {
 		return "", compileErr(err, opts.Filename)
@@ -106,6 +118,8 @@ func Compile(src string, opts Options) (string, error) {
 		FS:               opts.FS,
 		Globals:          opts.Globals,
 		CustomProperties: opts.CustomProperties,
+		Warn:             opts.Warn,
+		Sandbox:          sb,
 	})
 	if err != nil {
 		return "", compileErr(err, opts.Filename)
@@ -116,6 +130,10 @@ func Compile(src string, opts Options) (string, error) {
 // Build compiles Stylus source like Compile but returns a Result carrying the
 // import dependency list and, when Options.SourceMap is set, a source map.
 func Build(src string, opts Options) (Result, error) {
+	sb, err := opts.sandbox(len(src))
+	if err != nil {
+		return Result{}, compileErr(err, opts.Filename)
+	}
 	sheet, err := parser.Parse(src)
 	if err != nil {
 		return Result{}, compileErr(err, opts.Filename)
@@ -133,6 +151,8 @@ func Build(src string, opts Options) (Result, error) {
 		FS:               opts.FS,
 		Globals:          opts.Globals,
 		CustomProperties: opts.CustomProperties,
+		Warn:             opts.Warn,
+		Sandbox:          sb,
 		SourceMap:        opts.SourceMap,
 		SourceFile:       source,
 		SourceContent:    src,
@@ -196,6 +216,10 @@ func compileErr(err error, file string) error {
 // document (JSON) mapping output positions back to the source. The original
 // source is embedded in the map (sourcesContent) so it is self-contained.
 func CompileMap(src string, opts Options) (cssOut, mapJSON string, err error) {
+	sb, err := opts.sandbox(len(src))
+	if err != nil {
+		return "", "", compileErr(err, opts.Filename)
+	}
 	sheet, err := parser.Parse(src)
 	if err != nil {
 		return "", "", compileErr(err, opts.Filename)
@@ -213,6 +237,8 @@ func CompileMap(src string, opts Options) (cssOut, mapJSON string, err error) {
 		FS:               opts.FS,
 		Globals:          opts.Globals,
 		CustomProperties: opts.CustomProperties,
+		Warn:             opts.Warn,
+		Sandbox:          sb,
 		SourceFile:       source,
 		SourceContent:    src,
 		OutFile:          opts.OutFile,
@@ -242,6 +268,12 @@ func CompileFileMap(path string, opts Options) (cssOut, mapJSON string, err erro
 func readSource(path string, opts Options) ([]byte, error) {
 	if opts.FS != nil {
 		return fs.ReadFile(opts.FS, path)
+	}
+	if opts.Sandbox != nil {
+		// No OS filesystem in a sandbox, even for the host-chosen entry
+		// file: keeping the rule absolute makes "what can this compile
+		// read?" answerable by looking at Options.FS alone.
+		return nil, eval.LimitErr("reading %q: a sandboxed compile reads only from Options.FS", path)
 	}
 	return os.ReadFile(path)
 }

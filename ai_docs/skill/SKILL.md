@@ -92,6 +92,16 @@ variables with final values (Globals and `@import` honored).
 title-case on non-alphanumerics (`card__title--big` → `CardTitleBig`);
 colliding constants are an error naming both sources. **go-styl extension.**
 
+**Scoped components** — `styl.Component(src, opts)` / `ComponentFile` return
+`*Scoped{CSS, Names, Manifest}`: every class and `@keyframes` name (plus
+`animation`/`animation-name` refs to local keyframes) renamed `name_<hash>`,
+hash = 8 base32 chars of SHA-256(src) — independent of Options, so Globals
+never change names. IDs/type/attribute selectors stay global; `:global(.x)`
+opts out (wrapper removed; nested use needs `& :global(.x)`).
+`Scoped.Class("card", "u-flex")` joins scoped names, passing unknowns through.
+`Manifest.Scoped` (local→scoped) makes `GoSource` emit `Card = "card_<hash>"
+// card`. CLI: `styl gen -scoped [-css out.css]`. **go-styl extension.**
+
 ### CLI (`cmd/styl`)
 
 ```shell
@@ -102,6 +112,9 @@ go run ./cmd/styl -o out.css input.styl   # write to a file
 go run ./cmd/styl -o out.css -sourcemap input.styl  # also writes out.css.map
 go run ./cmd/styl -D primary=#0af -cssvar primary input.styl  # theming (repeatable)
 go run ./cmd/styl gen -pkg css -o css_gen.go input.styl       # typed Go constants
+go run ./cmd/styl gen -scoped -css out.css input.styl         # scoped component
+go run ./cmd/styl migrate -o out.css input.styl               # Stylus → modern nested CSS
+go run ./cmd/styl fmt -w input.styl                           # format in place (-l lists unformatted)
 ```
 
 `-sourcemap` requires `-o`; it writes `<out>.map` and appends a
@@ -110,6 +123,26 @@ global (value is a Stylus expression); `-cssvar name` exposes a variable as a
 CSS custom property. `styl gen` emits a Go constants file instead of CSS
 (flags: `-o`, `-pkg` default `css`, `-D`) — wire it with
 `//go:generate go run github.com/rohanthewiz/go-styl/cmd/styl gen -pkg css -o css_gen.go app.styl`.
+
+`styl migrate` (library: `styl.Migrate`/`MigrateFile` →
+`MigrateResult{CSS, Notes, Deps}`) converts a sheet to modern CSS for
+leaving Stylus. Nesting stays native CSS nesting, and a bare `:hover`
+becomes `&:hover`. Root variables become `:root` custom properties
+(`var(--x)`), and arithmetic becomes `calc()` when the units allow it.
+Mixins, loops, `if`, `@extend` and `.styl` imports are resolved in place.
+Each such spot, and each value computed from a variable ("frozen"), gets
+a `/* styl-migrate: … */` note. `&__elem` concatenation and rules under a
+pseudo-element can't nest, so they are written out in full after the
+enclosing block. Flags: `-o`, `-no-notes`, `-no-vars`, `-q`, `-D`.
+**go-styl extension.**
+
+`styl fmt` (library: `styl.Format`) is a whitespace-only formatter: two-space
+indentation by depth, single spaces inside lines, one blank line at most,
+comments kept. It refuses any result that doesn't parse to the same AST
+(`styl.ErrFormatUnsafe`), and a file that doesn't parse gets its parse error.
+`cmd/styl-lsp` is an LSP server over stdio. It gives diagnostics, completion,
+hover with computed values, go-to-definition across imports, symbols, color
+swatches and formatting. **go-styl extension.**
 
 ### Serving over HTTP
 
@@ -391,8 +424,29 @@ wherever a color is expected.
 (Note: `round` takes a single argument — no precision parameter.)
 
 **List** — `length(list)`; `push(list, v…)` (alias `append`);
-`unshift(list, v…)` (alias `prepend`); `index(list, v)`; `first(list)`
-`last(list)`; `join(sep, list)`.
+`unshift(list, v…)` (alias `prepend`); `pop(list)` `shift(list)`;
+`index(list, v)`; `first(list)` `last(list)`; `join(sep, list)`. Given a
+variable, `push`/`unshift`/`pop`/`shift` also rebind it (`push(l, 4)` alone
+extends `l`); `push` returns the new list, so `l = push(l, 4)` works too.
+
+**Objects** — `o = { a: 1, 'b-c': 2px 3px }` (or one pair per line inside
+`o = {` … `}`); read with `o.a` / `o[key]` (missing ⇒ null); assign with
+`o.a = x` / `o[key] = x` / `o.a.b ?= x`; `'a' in o`; `for key, val in o`;
+`length(o)` `keys(o)` (quoted strings) `values(o)` `clone(o)`;
+`merge(dest, src…, [deep])` (alias `extend`, changes dest);
+`contrast(fg, [bg])` ⇒ `{ratio, error, min, max}`;
+`json(path, { hash: true })` ⇒ object, or `json(path)` ⇒ one variable per leaf
+(`a-b-c`). Objects are shared by reference. An object can't be a property
+value (read a key). An inline literal right after a property name
+(`w {a: 1}.a`) reads as a block; write `w ({a: 1}).a`.
+
+**Context** — `selector()` (current selector, `'&'` at root; args nest:
+`selector('&:hover')`), `selectors()` (one string per nesting level),
+`selector-exists('.a .b')` (rules compiled so far), `current-media()`,
+`define(name, v, [global])`, `lookup(name)`, `add-property(name, v)` (into
+the enclosing rule, also from a function used in a value), `warn(msg)`
+(`Options.Warn`, else stderr), `+prefix-classes('ui-')` with an indented
+block of rules. `use()` is unsupported (JS plugins).
 
 **String** — `unquote(s)` `quote(s)`; `s(fmt, args…)` (sprintf-style);
 `uppercase(s)` `lowercase(s)`; `substr(s, start[, len])`;

@@ -32,11 +32,18 @@ type Options struct {
 	// CustomProperties lists root-level variables to expose as CSS custom
 	// properties (see the public styl.Options.CustomProperties).
 	CustomProperties []string
+	// Warn receives warn() messages; nil writes "Warning: msg" to stderr,
+	// as the stylus CLI does.
+	Warn func(msg string)
 	// Source-map inputs (used by EvaluateMap/EvaluateFull).
 	SourceMap     bool   // build a source map (EvaluateFull)
 	SourceFile    string // .styl path recorded in the map's "sources"
 	SourceContent string // original source text, embedded as "sourcesContent"
 	OutFile       string // generated filename recorded in the map's "file"
+	// Sandbox, when non-nil, confines the compile for untrusted source: no
+	// OS filesystem, vetted imports, and step/time/size budgets (see
+	// sandbox.go). nil leaves every check off.
+	Sandbox *Sandbox
 }
 
 // extendReq records a pending @extend: graft Extenders onto every rule matching
@@ -68,6 +75,14 @@ type evaluator struct {
 	deps         []string        // resolved paths of every inlined @import, in order
 	customProps  map[string]bool // variable names exposed as CSS custom properties
 	rootScope    *Scope          // the stylesheet's root scope (custom props bind here)
+	// cur is the context of the statement executing now. Expression
+	// evaluation only carries a scope, so the built-ins that read or change
+	// where they are called from — selector(), current-media(),
+	// add-property(), define() … (see context.go) — find it here. execStmt
+	// sets and restores it around each statement.
+	cur *execCtx
+	// sb tallies usage against opts.Sandbox (unused when that is nil).
+	sb sandboxState
 }
 
 // execCtx captures where statements emit while a block executes: the active
@@ -88,6 +103,31 @@ type execCtx struct {
 	// call, so the canonical `border-radius(n)` / `border-radius n` mixin
 	// pattern does not recurse (stylus behaves the same).
 	mixin string
+
+	// The fields below describe where the block sits, for the context
+	// built-ins. A function or mixin body inherits them from its call site,
+	// as in Stylus, where selector() inside a function reports the caller's
+	// selector.
+	//
+	// stack holds each nesting level's own selectors, outermost first, as
+	// written (after interpolation and class prefixing) rather than combined:
+	//
+	//	.a, .b          stack [[.a .b]]           parents [.a .b]
+	//	  .c &:hover    stack [[.a .b] [.c &:hover]]
+	//	                parents [.c .a:hover  .c .b:hover]
+	//
+	// selectors() reports it level by level; selector() uses parents.
+	stack [][]string
+	// media is the innermost enclosing @media header ("" outside any), for
+	// current-media().
+	media string
+	// prefix is the class prefix set by +prefix-classes(p): a '.' starting a
+	// class name in this block's selectors gains it.
+	prefix string
+	// propRule is the rule add-property() appends to when rule is nil: a
+	// pure function call has no rule of its own, but add-property() inside
+	// it targets the rule of the declaration that called it.
+	propRule *css.Rule
 }
 
 // Evaluate evaluates a stylesheet and returns the rendered CSS.
@@ -115,10 +155,17 @@ func EvaluateFull(sheet *ast.Stylesheet, opts Options) (cssOut, mapJSON string, 
 	}
 	deps = ev.deps
 	if !opts.SourceMap {
-		return css.RenderSheet(nodes, opts.Pretty, nil), "", deps, nil
+		cssOut = css.RenderSheet(nodes, opts.Pretty, nil)
+		if err := ev.checkOutput(cssOut); err != nil {
+			return "", "", nil, err
+		}
+		return cssOut, "", deps, nil
 	}
 	sm := css.NewSourceMap(opts.OutFile, opts.SourceFile, opts.SourceContent)
 	cssOut = css.RenderSheet(nodes, opts.Pretty, sm)
+	if err := ev.checkOutput(cssOut); err != nil {
+		return "", "", nil, err
+	}
 	return cssOut, sm.JSON(), deps, nil
 }
 
@@ -147,7 +194,9 @@ func evalNodes(sheet *ast.Stylesheet, opts Options) (*evaluator, []css.Node, err
 		return nil, nil, err
 	}
 
-	ev.applyExtends()
+	if err := ev.applyExtends(); err != nil {
+		return nil, nil, err
+	}
 
 	if root := ev.customPropsRule(); root != nil {
 		ev.out = append([]css.Node{root}, ev.out...)
@@ -161,13 +210,32 @@ func evalNodes(sheet *ast.Stylesheet, opts Options) (*evaluator, []css.Node, err
 }
 
 // applyExtends grafts each @extend's selectors onto every matching target rule.
-func (ev *evaluator) applyExtends() {
+//
+// In a sandbox the grafted selector text is charged against MaxOutputBytes
+// as it accrues: N extends of a selector shared by M rules graft N*M
+// selector lists, so a sheet that ran in few steps could otherwise build a
+// huge tree here, before the final output check ever sees it.
+func (ev *evaluator) applyExtends() error {
+	limit := 0
+	if sb := ev.opts.Sandbox; sb != nil {
+		limit = sb.MaxOutputBytes
+	}
+	grafted := 0
 	for _, ex := range ev.extends {
+		exBytes := 0
+		for _, e := range ex.extenders {
+			exBytes += len(e) + 1
+		}
 		targets := ev.findExtendTargets(ex.target)
 		for _, t := range targets {
 			t.Extenders = append(t.Extenders, ex.extenders...)
+			grafted += exBytes
+			if limit > 0 && grafted > limit {
+				return limitErr("@extend output exceeds %d bytes", limit)
+			}
 		}
 	}
+	return nil
 }
 
 // findExtendTargets returns the rules an @extend should attach to: the registered
@@ -206,6 +274,13 @@ func (ev *evaluator) execBlock(stmts []ast.Stmt, ctx *execCtx) error {
 // statement's source position (an error already positioned deeper — e.g. inside
 // a mixin body — keeps its inner position).
 func (ev *evaluator) execStmt(stmt ast.Stmt, ctx *execCtx) error {
+	if err := ev.tick(); err != nil {
+		line, col := ast.Pos(stmt)
+		return diag.WrapPos(err, ctx.file, line, col)
+	}
+	prev := ev.cur
+	ev.cur = ctx
+	defer func() { ev.cur = prev }()
 	if err := ev.execStmtInner(stmt, ctx); err != nil {
 		line, col := ast.Pos(stmt)
 		return diag.WrapPos(err, ctx.file, line, col)
@@ -217,6 +292,8 @@ func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 	switch s := stmt.(type) {
 	case *ast.Assignment:
 		return ev.evalAssignment(s, ctx.scope)
+	case *ast.MemberAssign:
+		return ev.evalMemberAssign(s, ctx.scope)
 	case *ast.Declaration:
 		if ctx.rule == nil {
 			return fmt.Errorf("property %q must appear inside a selector", s.Property)
@@ -238,6 +315,11 @@ func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 		v, err := ev.evalExpr(s.Value, ctx.scope)
 		if err != nil {
 			return err
+		}
+		// Stylus prints an object as a JSON-ish blob, which is never valid
+		// CSS; an error pointing at the key syntax is more useful.
+		if _, isObj := value.Deref(v).(*value.Hash); isObj {
+			return fmt.Errorf("property %q: an object is not a CSS value (read a key with obj.key or obj[key])", prop)
 		}
 		ctx.rule.Statements = append(ctx.rule.Statements, &css.Statement{
 			Property:  prop,
@@ -313,6 +395,9 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 		if err != nil {
 			return err
 		}
+		if ctx.prefix != "" {
+			r = prefixClasses(r, ctx.prefix)
+		}
 		selfs[i] = r
 	}
 	combined := combineSelectors(ctx.parents, selfs, ev.opts.Pretty)
@@ -336,7 +421,8 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 	*ctx.sink = append(*ctx.sink, rule)
 	ev.rules = append(ev.rules, rule)
 
-	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, sink: ctx.sink, dir: ctx.dir, file: ctx.file, mixin: ctx.mixin}
+	child := &execCtx{scope: ctx.scope.Child(), rule: rule, parents: combined, sink: ctx.sink, dir: ctx.dir, file: ctx.file, mixin: ctx.mixin,
+		stack: append(ctx.stack[:len(ctx.stack):len(ctx.stack)], selfs), media: ctx.media, prefix: ctx.prefix}
 	if err := ev.execBlock(rs.Body, child); err != nil {
 		return err
 	}
@@ -373,6 +459,9 @@ func (ev *evaluator) evalFor(s *ast.For, ctx *execCtx) error {
 	if err != nil {
 		return err
 	}
+	if h, ok := value.Deref(iter).(*value.Hash); ok {
+		return ev.evalForHash(s, h, ctx)
+	}
 	for idx, item := range iterItems(iter) {
 		if s.Index != "" {
 			ctx.scope.Set(s.Index, &value.Number{Num: float64(idx)})
@@ -402,6 +491,9 @@ func transparentArgs(v ast.Expr) []ast.Expr {
 // into the current rule and selector context.
 func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 	cl, ok := ctx.scope.GetFunc(s.Name)
+	if s.Block != nil {
+		return ev.evalBlockMixinCall(s, cl, ctx)
+	}
 	if !ok {
 		// A bare identifier naming a variable is an expression statement: its
 		// value becomes the implicit return (a function body ending in `n`).
@@ -415,7 +507,7 @@ func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 		// Stylus: its value is the implicit return (a function body ending
 		// in `round(n)`), and its error stops compilation (`error('…')`
 		// guarding a mixin's arguments).
-		if _, isBuiltin := builtin.Lookup(s.Name); isBuiltin {
+		if isBuiltinName(s.Name) {
 			v, err := ev.evalCall(&ast.Call{Name: s.Name, Args: s.Args}, ctx.scope)
 			if err != nil {
 				return err
@@ -425,6 +517,9 @@ func (ev *evaluator) evalMixinCall(s *ast.MixinCall, ctx *execCtx) error {
 		}
 		candidates := ctx.scope.FuncNames()
 		for name := range builtin.Registry {
+			candidates = append(candidates, name)
+		}
+		for name := range ctxBuiltins {
 			candidates = append(candidates, name)
 		}
 		if hint := suggest(s.Name, candidates); hint != "" {
@@ -458,6 +553,18 @@ func (ev *evaluator) invoke(cl *Closure, args []value.Value, emit *execCtx) (val
 	// Body statements' positions refer to the definition site, so error
 	// positioning uses the closure's file rather than the caller's.
 	fctx := &execCtx{scope: fscope, file: cl.File, mixin: cl.Def.Name}
+	// The body sees its call site's selector stack, media and class prefix
+	// (see execCtx). ev.cur is the calling statement's context.
+	if caller := ev.cur; caller != nil {
+		fctx.parents = caller.parents
+		fctx.stack = caller.stack
+		fctx.media = caller.media
+		fctx.prefix = caller.prefix
+		fctx.propRule = caller.rule
+		if fctx.propRule == nil {
+			fctx.propRule = caller.propRule
+		}
+	}
 	if emit != nil {
 		fctx.rule = emit.rule
 		fctx.parents = emit.parents
@@ -580,7 +687,15 @@ func (ev *evaluator) evalExpr(e ast.Expr, scope *Scope) (value.Value, error) {
 	case *ast.Unary:
 		return ev.evalUnary(x, scope)
 	case *ast.Binary:
-		return ev.evalBinary(x, scope)
+		// checkValue is a no-op outside a sandbox; inside, it bounds the
+		// value-growing forms (binary ops, list literals, calls). Ranges
+		// are exempt: maxRangeLen already bounds them, and a loop over
+		// 1..65536 (~500 KB rendered) is legitimate — it's what the loop
+		// body does per step that MaxSteps meters.
+		if x.Op == token.DOTDOT || x.Op == token.ELLIPSIS {
+			return ev.evalBinary(x, scope)
+		}
+		return ev.checkValue(ev.evalBinary(x, scope))
 	case *ast.List:
 		items := make([]value.Value, len(x.Items))
 		for i, it := range x.Items {
@@ -590,11 +705,15 @@ func (ev *evaluator) evalExpr(e ast.Expr, scope *Scope) (value.Value, error) {
 			}
 			items[i] = v
 		}
-		return &value.List{Items: items, Comma: x.Comma}, nil
+		return ev.checkValue(&value.List{Items: items, Comma: x.Comma}, nil)
 	case *ast.Call:
-		return ev.evalCall(x, scope)
+		return ev.checkValue(ev.evalCall(x, scope))
 	case *ast.Index:
 		return ev.evalIndex(x, scope)
+	case *ast.Member:
+		return ev.evalMember(x, scope)
+	case *ast.Object:
+		return ev.evalObject(x, scope)
 	default:
 		return nil, fmt.Errorf("cannot evaluate expression %T", e)
 	}
@@ -693,6 +812,14 @@ func (ev *evaluator) evalIndex(ix *ast.Index, scope *Scope) (value.Value, error)
 	}
 	v, idx = value.Deref(v), value.Deref(idx)
 
+	// obj[key]: a missing key is null, like obj.key.
+	if h, ok := v.(*value.Hash); ok {
+		if got, found := h.Get(value.KeyString(idx)); found {
+			return got, nil
+		}
+		return value.Null{}, nil
+	}
+
 	var items []value.Value
 	switch t := v.(type) {
 	case *value.List:
@@ -758,6 +885,11 @@ func (ev *evaluator) evalUnary(u *ast.Unary, scope *Scope) (value.Value, error) 
 }
 
 func (ev *evaluator) evalBinary(b *ast.Binary, scope *Scope) (value.Value, error) {
+	if b.InText {
+		if v, ok, err := ev.inAsText(b, scope); ok || err != nil {
+			return v, err
+		}
+	}
 	l, err := ev.evalExpr(b.L, scope)
 	if err != nil {
 		return nil, err
@@ -823,6 +955,8 @@ func (ev *evaluator) evalBinary(b *ast.Binary, scope *Scope) (value.Value, error
 		return nil, fmt.Errorf("cannot apply %q to %s and %s", opText(b.Op), l.TypeName(), r.TypeName())
 	case token.DOTDOT, token.ELLIPSIS:
 		return evalRange(b.Op, l, r)
+	case token.IN:
+		return &value.Bool{Val: contains(r, l)}, nil
 	case token.EQ:
 		return &value.Bool{Val: l.CSS(true) == r.CSS(true)}, nil
 	case token.NEQ:
@@ -876,6 +1010,15 @@ func (ev *evaluator) evalCall(c *ast.Call, scope *Scope) (value.Value, error) {
 		return ev.invoke(cl, args, nil)
 	}
 
+	// Built-ins that need the evaluator (the call site's selector, scope or
+	// rule; files; options) rather than just their argument values.
+	if fn, ok := ctxBuiltins[c.Name]; ok {
+		for i, a := range args {
+			args[i] = value.Deref(a)
+		}
+		return fn(ev, c, args, scope)
+	}
+
 	if fn, ok := builtin.Lookup(c.Name); ok {
 		// Built-ins type-switch on concrete values, so custom-property
 		// wrappers resolve to their compile-time value. (User-defined
@@ -884,7 +1027,14 @@ func (ev *evaluator) evalCall(c *ast.Call, scope *Scope) (value.Value, error) {
 		for i, a := range args {
 			args[i] = value.Deref(a)
 		}
-		return fn(args)
+		v, err := fn(args)
+		if err != nil {
+			return nil, err
+		}
+		// push/pop/shift/unshift also update the list variable they were
+		// given, as in Stylus (see mutateListVar).
+		ev.mutateListVar(c, args, v, scope)
+		return v, nil
 	}
 
 	// Unknown function: pass through as a literal CSS function call,

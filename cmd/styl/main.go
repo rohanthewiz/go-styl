@@ -4,6 +4,8 @@
 //
 //	styl [flags] <input.styl>
 //	styl gen [flags] <input.styl>
+//	styl migrate [flags] <input.styl>
+//	styl fmt [-w] [-l] [files...]
 //
 // Flags:
 //
@@ -29,6 +31,35 @@
 //	-o <file>     write the Go source to file instead of stdout
 //	-pkg <name>   package name for the generated file (default "css")
 //	-D name=value define a global variable (repeatable), as above
+//	-scoped       compile as a scoped component (styl.Component): class and
+//	              keyframes constants hold the hashed names
+//	-css <file>   with -scoped, also write the scoped CSS to file
+//
+// The migrate subcommand converts a Stylus file to modern CSS for leaving
+// the preprocessor: nesting stays nested (native CSS nesting), root-level
+// variables become custom properties on :root, and mixins, loops,
+// conditionals and @extend are resolved in place, each flagged with a
+// /* styl-migrate: … */ comment for review. The notes are also listed on
+// stderr.
+//
+// migrate flags:
+//
+//	-o <file>     write the CSS to file instead of stdout
+//	-no-notes     omit the inline review comments
+//	-no-vars      inline all variables instead of emitting custom properties
+//	-q            don't list the notes on stderr
+//	-D name=value define a global variable (repeatable), as above
+//
+// The fmt subcommand formats Stylus source in place of gofmt's role:
+// two-space indentation by nesting depth, single spaces inside lines, no
+// trailing whitespace, at most one blank line in a row. Comments are kept,
+// and a result that wouldn't parse to the same stylesheet is never written.
+// With no files it formats stdin to stdout.
+//
+// fmt flags:
+//
+//	-w            rewrite changed files in place
+//	-l            list files whose formatting differs
 package main
 
 import (
@@ -44,6 +75,14 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "gen" {
 		runGen(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		runMigrate(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "fmt" {
+		runFmt(os.Args[2:])
 		return
 	}
 

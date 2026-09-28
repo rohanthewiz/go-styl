@@ -15,7 +15,10 @@ import (
 //	spaceList  := binary (binary)*                    // juxtaposition (space list)
 //	binary     := unary (op unary)*                   // precedence-climbing
 //	unary      := ("-" | "!" | "+") unary | primary
-//	primary    := NUMBER | COLOR | STRING | IDENT ["(" args ")"] | "(" value ")"
+//	primary    := operand ("[" value "]" | "." IDENT)*   // subscripts, members
+//	operand    := NUMBER | COLOR | STRING | IDENT ["(" args ")"] | "(" value ")"
+//	            | "{" [pair ((","|";") pair)*] "}"      // object literal
+//	pair       := (IDENT | STRING) ":" spaceList
 type exprParser struct {
 	toks []token.Token
 	pos  int
@@ -24,6 +27,7 @@ type exprParser struct {
 	// parentheses is a literal slash (font: 14px/1.5), not division.
 	propValue bool
 	depth     int // current parenthesis nesting
+	callDepth int // current call-argument nesting (f(…))
 }
 
 // ParseExpr lexes and parses a single value expression from raw source text. It
@@ -144,17 +148,25 @@ func (p *exprParser) parseBinary(minBP int) (ast.Expr, error) {
 		if p.unaryPos(p.pos) {
 			break
 		}
-		bp := infixBP(p.cur().Kind)
+		bp := p.curInfixBP()
 		if bp == 0 || bp < minBP {
 			break
 		}
 		op := p.next().Kind
+		if op == token.IDENT { // the `in` keyword (see curInfixBP)
+			op = token.IN
+		}
 		right, err := p.parseBinary(bp + 1) // +1 => left-associative
 		if err != nil {
 			return nil, err
 		}
 		literal := op == token.SLASH && p.propValue && p.depth == 0
-		left = &ast.Binary{Op: op, L: left, R: right, Literal: literal}
+		// CSS itself uses the word `in` (color interpolation:
+		// linear-gradient(to right in oklch, …)). In a property value or a
+		// call's arguments, an `in` whose right side turns out to be a bare
+		// word stays text; see ast.Binary.InText.
+		inText := op == token.IN && (p.propValue || p.callDepth > 0)
+		left = &ast.Binary{Op: op, L: left, R: right, Literal: literal, InText: inText}
 	}
 	return left, nil
 }
@@ -173,16 +185,41 @@ func (p *exprParser) parseUnary() (ast.Expr, error) {
 	}
 }
 
-// parsePrimary parses one operand and any subscripts glued to it: `r[1]`,
-// `f(x)[0]`, `(1 2 3)[-1]`, `r[0][1]`. The `[` must touch the operand; with
-// whitespace before it (`1fr [main-start]`) it is not a subscript, which
-// leaves room for CSS grid line names.
+// curInfixBP returns the binding power of the current token as an infix
+// operator, or 0. Besides the operator tokens it recognizes the keyword `in`
+// (`'key' in obj`, `3 in list`), which Stylus binds between equality and
+// relational comparison, so `a in l == true` is `(a in l) == true`.
+func (p *exprParser) curInfixBP() int {
+	t := p.cur()
+	if t.Kind == token.IDENT && t.Text == "in" {
+		return 35
+	}
+	return infixBP(t.Kind)
+}
+
+// parsePrimary parses one operand and any subscripts or member accesses glued
+// to it: `r[1]`, `f(x)[0]`, `(1 2 3)[-1]`, `r[0][1]`, `obj.key`,
+// `theme.colors[mode]`. The `[` must touch the operand; with whitespace before
+// it (`1fr [main-start]`) it is not a subscript, which leaves room for CSS
+// grid line names. The lexer only produces DOT when the '.' is glued to the
+// operand and followed by a name.
 func (p *exprParser) parsePrimary() (ast.Expr, error) {
 	x, err := p.parseOperand()
 	if err != nil {
 		return nil, err
 	}
-	for p.cur().Kind == token.LBRACKET && !p.cur().SpaceBefore {
+	for {
+		if p.cur().Kind == token.DOT {
+			p.next()
+			if p.cur().Kind != token.IDENT {
+				return nil, diag.Errorf(p.line, 0, "expected a key name after '.'")
+			}
+			x = &ast.Member{X: x, Name: p.next().Text}
+			continue
+		}
+		if p.cur().Kind != token.LBRACKET || p.cur().SpaceBefore {
+			break
+		}
 		p.next()
 		p.depth++
 		idx, err := p.parseValue()
@@ -197,6 +234,42 @@ func (p *exprParser) parsePrimary() (ast.Expr, error) {
 		x = &ast.Index{X: x, Index: idx}
 	}
 	return x, nil
+}
+
+// parseObject parses an object literal; the current token is its '{'. Pairs
+// are separated by commas or semicolons, and empty entries are skipped, so
+// the multi-line form (which the parser folds onto one line with commas, see
+// joinObjectLiterals) may also end its lines with commas: `{, a: 1,, b: 2, }`.
+// A key is a bare name or a quoted string; a value is a space list (a comma
+// would end the pair).
+func (p *exprParser) parseObject() (ast.Expr, error) {
+	p.next() // consume '{'
+	p.depth++
+	defer func() { p.depth-- }()
+	obj := &ast.Object{}
+	for {
+		switch p.cur().Kind {
+		case token.COMMA, token.SEMI:
+			p.next()
+			continue
+		case token.RBRACE:
+			p.next()
+			return obj, nil
+		case token.IDENT, token.STRING:
+		default:
+			return nil, diag.Errorf(p.line, 0, "expected an object key or '}', got %q", p.cur().Text)
+		}
+		key := p.next().Text
+		if p.cur().Kind != token.COLON {
+			return nil, diag.Errorf(p.line, 0, "expected ':' after object key %q", key)
+		}
+		p.next()
+		val, err := p.parseSpaceList()
+		if err != nil {
+			return nil, err
+		}
+		obj.Pairs = append(obj.Pairs, ast.ObjectPair{Key: key, Value: val})
+	}
 }
 
 // parseOperand parses a single literal, identifier, call or parenthesized
@@ -228,6 +301,8 @@ func (p *exprParser) parseOperand() (ast.Expr, error) {
 	case token.AMP:
 		p.next()
 		return &ast.Ident{Name: "&"}, nil
+	case token.LBRACE:
+		return p.parseObject()
 	case token.LPAREN:
 		p.next()
 		p.depth++
@@ -254,7 +329,8 @@ func (p *exprParser) parseOperand() (ast.Expr, error) {
 func (p *exprParser) parseArgs() ([]ast.Expr, error) {
 	p.next() // consume '('
 	p.depth++
-	defer func() { p.depth-- }()
+	p.callDepth++
+	defer func() { p.depth--; p.callDepth-- }()
 	var args []ast.Expr
 	if p.cur().Kind == token.RPAREN {
 		p.next()
@@ -283,7 +359,7 @@ func (p *exprParser) parseArgs() ([]ast.Expr, error) {
 // detect juxtaposition for space-separated lists).
 func startsTerm(k token.Kind) bool {
 	switch k {
-	case token.NUMBER, token.COLOR, token.STRING, token.IDENT, token.LPAREN, token.AMP:
+	case token.NUMBER, token.COLOR, token.STRING, token.IDENT, token.LPAREN, token.AMP, token.LBRACE:
 		return true
 	}
 	return false

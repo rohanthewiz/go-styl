@@ -35,6 +35,7 @@ func init() {
 	register("grayscale", grayscale)
 	register("luminosity", luminosity)
 	register("blend", blendOver)
+	register("contrast", contrast)
 	register("transparentify", transparentify)
 	register("component", component)
 }
@@ -457,6 +458,83 @@ func blendOver(args []value.Value) (value.Value, error) {
 		B: mixCh(top.B, bottom.B),
 		A: clampAlpha(a + bottom.A - a*bottom.A),
 	}, nil
+}
+
+// contrast(top, [bottom = white]) is the WCAG contrast ratio of text colored
+// top over a bottom background, as an object (Stylus's contrast):
+//
+//	contrast(#000, #fff) → {ratio: 21, error: 0, min: 21, max: 21}
+//
+// A translucent top is first blended over bottom. With a translucent bottom
+// the real background is unknown (it depends on what lies under it), so the
+// result is a range: max is the better of the ratios over black and over
+// white backings, min is the ratio over the backing that makes bottom look
+// most like top, ratio is their midpoint and error half their spread. Ratios
+// round to one decimal place; ratio and error to two.
+//
+// With anything but a color it is the CSS filter function and passes through
+// (filter: contrast(1.5)).
+func contrast(args []value.Value) (value.Value, error) {
+	if len(args) < 1 || len(args) > 2 || !isColor(args[0]) {
+		return literalCall("contrast", args), nil
+	}
+	top, err := argColor("contrast", args, 0)
+	if err != nil {
+		return nil, err
+	}
+	bottom := &value.Color{R: 255, G: 255, B: 255, A: 1}
+	if len(args) == 2 {
+		if bottom, err = argColor("contrast", args, 1); err != nil {
+			return nil, err
+		}
+	}
+	// over composites a over b with a's alpha, rounding channels the way
+	// Stylus's RGBA constructor does (blendOver's math).
+	over := func(a, b *value.Color) *value.Color {
+		v, _ := blendOver([]value.Value{a, b})
+		return v.(*value.Color)
+	}
+	ratioOf := func(t, b *value.Color) float64 {
+		if t.A < 1 {
+			t = over(t, b)
+		}
+		l1 := relLuminance(b) + 0.05
+		l2 := relLuminance(t) + 0.05
+		r := l1 / l2
+		if l2 > l1 {
+			r = 1 / r
+		}
+		return math.Round(r*10) / 10
+	}
+
+	out := value.NewHash()
+	num := func(f float64) value.Value { return &value.Number{Num: f} }
+	if bottom.A >= 1 {
+		r := ratioOf(top, bottom)
+		out.Set("ratio", num(r))
+		out.Set("error", num(0))
+		out.Set("min", num(r))
+		out.Set("max", num(r))
+		return out, nil
+	}
+	black := &value.Color{A: 1}
+	white := &value.Color{R: 255, G: 255, B: 255, A: 1}
+	onBlack := ratioOf(top, over(bottom, black))
+	onWhite := ratioOf(top, over(bottom, white))
+	maxR := math.Max(onBlack, onWhite)
+	// closest is the opaque backing under which bottom comes out nearest to
+	// top: solve top = bottom·a + backing·(1-a) per channel, clamped.
+	ch := func(t, b uint8) uint8 {
+		x := (float64(t) - float64(b)*bottom.A) / (1 - bottom.A)
+		return clampByte(math.Min(math.Max(0, x), 255))
+	}
+	closest := &value.Color{R: ch(top.R, bottom.R), G: ch(top.G, bottom.G), B: ch(top.B, bottom.B), A: 1}
+	minR := ratioOf(top, over(bottom, closest))
+	out.Set("ratio", num(math.Round((minR+maxR)*50)/100))
+	out.Set("error", num(math.Round((maxR-minR)*50)/100))
+	out.Set("min", num(minR))
+	out.Set("max", num(maxR))
+	return out, nil
 }
 
 // transparentify(top, [bottom = white], [alpha]) finds the most transparent

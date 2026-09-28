@@ -50,6 +50,10 @@ const (
 	AMP      // &  (parent-selector reference)
 	DOTDOT   // .. (inclusive range)
 	ELLIPSIS // ... (rest parameter, or exclusive range in expressions)
+	DOT      // .  member access on an object (obj.key)
+	LBRACE   // {  opens an object literal (interpolation braces fold into IDENT)
+	RBRACE   // }  closes an object literal
+	IN       // in (membership test); lexed as IDENT "in", used as an ast.Binary op
 
 	COMMENT // /* ... */ block comment, preserved in output
 )
@@ -73,6 +77,7 @@ var kindNames = map[Kind]string{
 	LPAREN: "LPAREN", RPAREN: "RPAREN", LBRACKET: "LBRACKET", RBRACKET: "RBRACKET",
 	COMMA: "COMMA", COLON: "COLON", SEMI: "SEMI", AMP: "AMP",
 	DOTDOT: "DOTDOT", ELLIPSIS: "ELLIPSIS", COMMENT: "COMMENT",
+	DOT: "DOT", LBRACE: "LBRACE", RBRACE: "RBRACE", IN: "IN",
 }
 
 // String returns the token kind's name (handy in tests and errors).

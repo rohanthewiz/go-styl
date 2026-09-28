@@ -73,6 +73,12 @@ func (l *lexer) run() error {
 			// and units inside survive untouched (interpolation still resolves).
 			l.scanRawCall()
 
+		case c == '{' && l.atObjectLiteral():
+			// `{key: value}` or `{}` is an object literal; its pairs lex as
+			// ordinary tokens and the matching '}' becomes RBRACE.
+			l.toks = append(l.toks, token.Token{Kind: token.LBRACE, Text: "{", Line: l.line, Col: l.pos + 1})
+			l.pos++
+
 		case isIdentStart(c) || c == '{':
 			// '{' starts an interpolation that scanIdent folds into the token.
 			l.scanIdent()
@@ -276,12 +282,88 @@ func (l *lexer) scanOperator() error {
 	}
 
 	c := l.src[l.pos]
+	// Member access: a '.' glued to the end of an operand and followed by a
+	// name (obj.key, obj[k].key, f().key). A spaced or unglued '.' is not
+	// valid in an expression, so this cannot shadow another reading.
+	if c == '.' && isIdentStart(l.peek(1)) && l.gluedToOperand() {
+		l.toks = append(l.toks, token.Token{Kind: token.DOT, Text: ".", Line: l.line, Col: col})
+		l.pos++
+		return nil
+	}
 	if k, ok := oneCharOps[c]; ok {
 		l.toks = append(l.toks, token.Token{Kind: k, Text: string(c), Line: l.line, Col: col})
 		l.pos++
 		return nil
 	}
 	return diag.Errorf(l.line, 0, "unexpected character %q", string(c))
+}
+
+// gluedToOperand reports whether the previous token ends exactly at the
+// current position and can end an operand (a name, `]`, `)` or `}`).
+func (l *lexer) gluedToOperand() bool {
+	if len(l.toks) == 0 || l.pos == 0 {
+		return false
+	}
+	switch l.src[l.pos-1] {
+	case ' ', '\t':
+		return false
+	}
+	switch l.toks[len(l.toks)-1].Kind {
+	case token.IDENT, token.RBRACKET, token.RPAREN, token.RBRACE:
+		return true
+	}
+	return false
+}
+
+// atObjectLiteral reports whether the '{' at the current position opens an
+// object literal rather than an interpolation group. Interpolation glued to a
+// name on the left never reaches here (scanIdent folds it in), so the
+// remaining cases are told apart by content:
+//
+//	{}             → object (empty)
+//	{a: 1, b: 2}   → object (a top-level ':' separates a key from its value)
+//	{x}            → interpolation (a lone expression)
+//	{x}-top        → interpolation (glued to a name on the right)
+//
+// ':' inside strings, parentheses, brackets or a nested group doesn't count.
+// go-styl has no ternary operator, so an expression can't contain a bare ':'.
+func (l *lexer) atObjectLiteral() bool {
+	depth := 0
+	var quote rune
+	colon := false
+	for i := l.pos; i < len(l.src); i++ {
+		c := l.src[i]
+		if quote != 0 {
+			if c == '\\' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '{', '(', '[':
+			depth++
+		case '}', ')', ']':
+			depth--
+			if depth > 0 {
+				continue
+			}
+			// The group closed. Glued to a name on the right, it is
+			// interpolation (`{side}-width`).
+			if i+1 < len(l.src) && (isIdentPart(l.src[i+1]) || l.src[i+1] == '{') {
+				return false
+			}
+			return colon || strings.TrimSpace(string(l.src[l.pos+1:i])) == ""
+		case ':':
+			if depth == 1 {
+				colon = true
+			}
+		}
+	}
+	return false // unterminated: scanIdent keeps its old behavior
 }
 
 func (l *lexer) emit(k token.Kind, text string) {
@@ -308,6 +390,7 @@ var oneCharOps = map[rune]token.Kind{
 	'/': token.SLASH, '%': token.PERCENT, '<': token.LT, '>': token.GT, '!': token.NOT,
 	'(': token.LPAREN, ')': token.RPAREN, '[': token.LBRACKET, ']': token.RBRACKET,
 	',': token.COMMA, ':': token.COLON, ';': token.SEMI, '&': token.AMP,
+	'}': token.RBRACE,
 }
 
 func isIdentStart(c rune) bool  { return isIdentLetter(c) || c == '_' }

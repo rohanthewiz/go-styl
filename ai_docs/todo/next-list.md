@@ -29,7 +29,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-041
+**Next ID:** N-048
 
 ## Open
 
@@ -37,25 +37,37 @@ session's attempt to compile cema's stylesheets with go-styl.
   Value-level source mapping. Maps are selector/declaration/at-rule granular
   today. Still in the README's Future line; dropped from the session lists
   after `2026-0701-2034-m11-wasm-playground-deploy`.
-- **N-005** · raised `2026-0701-1623-go-styl-m7-m8` · value low
-  A Stylus LSP (killer feature #4), with `styl fmt` falling out of it. `styl
-  fmt` was raised on its own here; `2026-0703-0846-m13-runtime-theming` folded
-  it into the LSP.
-- **N-009** · raised `2026-0703-0846-m13-runtime-theming` · value low
-  Scoped component styles, `styl.Component` with hashed class names (the
-  first half of killer feature #3), feeding the same `GoSource` renderer as
-  `styl gen`.
-- **N-010** · raised `2026-0703-0846-m13-runtime-theming` · value low
-  `styl migrate`: Stylus → modern CSS migration tool (killer feature #5).
-- **N-011** · raised `2026-0703-0846-m13-runtime-theming` · value low
-  Safe multi-tenant theme compilation / sandbox (killer feature #6).
-- **N-040** · raised `2026-0927-1712-go-styl-more-builtins` · value low
-  The Stylus built-ins still missing after N-004. Hash-based: `merge`,
-  `keys`/`values` over objects, `contrast` (returns an object), `json`
-  (go-styl has no hash type). Evaluator context: `selector()`,
-  `selectors()`, `selector-exists()`, `current-media()`, `define()`,
-  `lookup()`, `use()`, `prefix-classes`, `add-property`, `warn`. Also
-  `pop`/`shift`/`push` don't mutate the list variable as in Stylus.
+- **N-041** · raised (N-040 session, doc pending) · value low
+  Block mixins for user mixins: `+m(args)` with an indented body, and
+  `{block}` inside the mixin to emit it. The parser now produces
+  `MixinCall.Block`, but only the built-in `+prefix-classes` accepts one;
+  a user mixin given a block is an error.
+- **N-043** · raised (N-010 session, doc pending) · value medium
+  `styl migrate` drops source comments: `parser.stripComments` removes them
+  before lexing, so the AST never sees them. A migration that loses the
+  author's comments needs hand repair. Carrying `/* */` (and `//` as
+  `/* */`) through needs comment nodes in the AST, at least at statement
+  level.
+- **N-044** · raised (N-010 session, doc pending) · value low
+  `styl migrate` inlines `.styl` imports into one output. Migrating a
+  multi-file project file-for-file needs partials that define only
+  variables/mixins to vanish, and other files to become
+  `@import "x.css"`. The :root tokens would go to a shared file.
+- **N-045** · raised `2026-0927-1931-n005-lsp-and-fmt` · value low
+  The LSP compiles imports from disk. An unsaved edit to an imported file
+  shows in definitions and completion (they read the editor's text), but
+  not in the importer's diagnostics or hover values until it's saved. The
+  fix is an fs.FS overlay of open documents for the analysis compile.
+- **N-046** · raised `2026-0927-1931-n005-lsp-and-fmt` · value low
+  LSP gaps: find references / rename, signature help, CSS property-name
+  completion, and a linter (unused variables and mixins, duplicate
+  properties). `def` already records scope spans, which references would
+  need.
+- **N-047** · raised `2026-0927-1931-n005-lsp-and-fmt` · value low
+  `styl fmt` doesn't touch statement spelling: `prop: value` vs
+  `prop value`, spacing around `=`, and `,` spacing stay as written. In
+  mixed-syntax files, lines outside braces keep their indentation. Each
+  of these needs its own rule, checked by the same AST guard.
 
 ## Roadmap
 
@@ -80,10 +92,79 @@ Wanted, but deferred on purpose.
   Recorded under README "Deliberate differences"; pinned by
   `difftest/corpus/bare-pseudo.styl`. `& :hover` gives the descendant form.
 
+- **N-042** · declined (N-040 session, doc pending) — `use()`. It loads a
+  JavaScript plugin; go-styl reports a clear error and points at
+  `Options.Globals` for passing Go values in.
+
 ## Closed
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-005** · raised `2026-0701-1623-go-styl-m7-m8` · closed 2026-09-27, `2026-0927-1931-n005-lsp-and-fmt`
+  Stylus LSP (killer feature #4) and `styl fmt`.
+  - `internal/parser/format.go`: `Format` rewrites whitespace only and
+    never prints the AST, which has no comments (N-043). Indentation comes
+    from the line-tree rule, or from `scanStructural` brace events in brace
+    syntax. Comments move with their code, and continuation lines keep
+    their offsets.
+  - Every result must re-parse to an equal AST, ignoring Line/Col and
+    whitespace in raw selectors/params. Otherwise fmt falls back to a
+    whitespace-only pass, then to `ErrFormatUnsafe`.
+  - Tests: corpus (examples, testdata, difftest) round-trip plus
+    idempotency, golden cases, and `FuzzFormat`.
+  - `styl fmt [-w] [-l]`, `styl.Format`.
+  - `internal/lsp` + `cmd/styl-lsp`: a hand-rolled JSON-RPC layer (no new
+    deps) with full sync. Each change runs parse + `ExtractManifest` in a
+    Sandbox (1s, 2M steps) over a root DirFS. Features: diagnostics
+    (import errors on the `@import` line, limits as warnings), completion,
+    hover with computed values, scope-aware definition across imports,
+    symbols, hex color swatches and picker, formatting. The last good
+    parse serves broken text.
+  - `eval.BuiltinNames` / `eval.ResolveImport` for tooling.
+  - Tests: `internal/lsp/server_test.go` drives the server over pipes.
+  - Follow-ups: N-045, N-046, N-047.
+
+- **N-011** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27 (session doc pending)
+  Safe multi-tenant theme compilation (killer feature #6): `Options.Sandbox`
+  (`sandbox.go`, `internal/eval/sandbox.go`). No OS filesystem (imports and
+  `*File` read only `Options.FS`), `AllowImport`, `Timeout`/`Context`,
+  `MaxSteps` (ticked per executed statement), `MaxValueBytes` (checked on
+  binary-op, list-literal and call results — ranges exempt), and
+  `MaxSourceBytes`/`MaxImports`/`MaxOutputBytes` (output includes @extend
+  grafts). Errors wrap `styl.ErrLimit`; warn() without a hook is dropped.
+  Every entry point honors it, including Migrate's own statement walk.
+- **N-010** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27 (session doc pending)
+  `styl migrate`: Stylus → modern CSS (killer feature #5).
+  `internal/eval/migrate.go` reuses the evaluator's scopes, expressions and
+  built-ins, and swaps in its own statement walk. That walk builds a nested
+  output tree instead of flat rules.
+  - Nesting is native CSS nesting (a bare `:hover` becomes `&:hover`).
+  - A root variable's first binding becomes a `:root` custom property.
+    Only the properties the output reads are emitted.
+  - Arithmetic becomes `calc()` when the units allow it, in `:root` too.
+  - Mixins, loops, `if`, `@extend` (folded into the target's selector
+    list) and `.styl` imports are resolved in place, each with a
+    `/* styl-migrate: … */` note. Frozen values (computed from a variable)
+    get one as well.
+  - `&__elem` concatenation, rules under a pseudo-element, and
+    `@keyframes`/`@font-face` inside a rule are hoisted after the
+    enclosing block, inside the same at-rules.
+  - `TestMigrateRoundTrip` flattens the migrated CSS for every example,
+    fixture and difftest sheet and checks it against `Compile`. Migrate
+    was added to `FuzzCompile`.
+  - Follow-ups: comments (N-043), file-for-file output (N-044).
+
+- **N-009** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27, `2026-0927-1838-go-styl-scoped-components`
+  Scoped component styles. `styl.Component`/`ComponentFile` return
+  `*Scoped{CSS, Names, Manifest}`. `css.Scope` renames, in place, class
+  tokens in selectors (own, `@extend` grafts, merged duplicates),
+  `@keyframes` names, and `animation`/`animation-name` references to local
+  keyframes, as `name_<8 base32 chars of SHA-256(src)>`. The hash ignores
+  Options, so Globals never move the names. IDs, type and attribute
+  selectors stay global, and `:global(...)` opts out. `Manifest.Scoped`
+  makes `GoSource` emit scoped values (`Card = "card_…" // card`), and `styl
+  gen -scoped [-css out.css]` wires it up. Tests in `component_test.go`.
 
 - **N-013** · raised `2026-0703-0959-playground-globals-exposure` · closed 2026-09-27, `2026-0927-1715-go-styl-live-reload`
   Dev-mode live reload. `stylserve.Options.LiveReload` makes `stylhttp`
@@ -93,6 +174,24 @@ are recorded in the session docs.
   without a reload; compile errors go to the console and the last good CSS
   stays. No fs watcher dependency. Tests in `stylhttp/live_test.go`;
   browser-verified.
+
+- **N-040** · raised `2026-0927-1712-go-styl-more-builtins` · closed 2026-09-27 (session doc pending)
+  Objects (hashes) and the context built-ins. `value.Hash` is an ordered,
+  by-reference object: literals (`{a: 1}`, multi-line `x = {` folded onto
+  one line by `joinObjectLiterals`), `obj.key` / `obj[k]` reads, member
+  assignment (`obj.a.b = x`, `?=`), `in`, `for k, v in obj`, and
+  object-aware `length`/`keys`/`values`/`clone`, plus `merge`/`extend`
+  (deep with a trailing `true`), `contrast` (returns an object) and
+  `json()` (both modes, a build dep). Context built-ins in
+  `internal/eval/context.go`: `selector()`, `selectors()`,
+  `selector-exists()`, `current-media()`, `define()`, `lookup()`,
+  `add-property()`, `warn()` (`Options.Warn`), `+prefix-classes(p)`.
+  `push`/`append`/`unshift`/`prepend`/`pop`/`shift` rebind the list
+  variable they're given. `use()` → N-042; user block mixins → N-041.
+  Deliberate differences: `current-media()` omits 0.64's stray parentheses;
+  `selector-exists()` only sees rules compiled before it; an object as a
+  property value is an error; `in` whose right side is a bare word stays CSS
+  text in property values and call args (`to right in oklch`).
 
 - **N-004** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-27, `2026-0927-1712-go-styl-more-builtins`
   More built-ins, taken from a diff of Stylus's function list against the

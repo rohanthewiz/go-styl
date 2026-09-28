@@ -37,18 +37,20 @@ class names actually used, and emit only the matching rules inline in
 `<head>`. A `styl.Prune(sheet, usedSelectors)` API plus an rweb/element hook.
 Zero-render-blocking CSS as a middleware flag. Genuinely novel for Go SSR.
 
-## 3. Scoped component styles + typed class names (CSS Modules for Go)
+## 3. Scoped component styles + typed class names (CSS Modules for Go) ✅ SHIPPED
 
 Two halves of one feature:
 
 - `styl.Component(src)` → hashed class names (`.card_x3f2`) plus a name→class
   map. Component-scoped styles for server-rendered Go, no build step.
+  ✅ SHIPPED as N-009 (`styl.Component`/`ComponentFile`, `:global(...)`,
+  `Manifest.Scoped`, `styl gen -scoped -css`).
 - A `styl gen` codegen (run via `go generate`) that emits a Go package of
   constants for every class/variable in a `.styl` — so `b.Div(css.Card)` in
   element is typo-proof and refactorable. Typed-css-modules, but for Go.
   ✅ SHIPPED as M14 (`styl gen`, `styl.Extract`, `Manifest.GoSource`).
 
-## 4. A Stylus LSP — single static binary
+## 4. A Stylus LSP — single static binary ✅ SHIPPED as N-005
 
 Stylus editor tooling is essentially abandoned upstream. We already have a
 real lexer/AST with positions, positioned errors, and did-you-mean. An LSP
@@ -58,7 +60,13 @@ value, color swatches. `go install .../cmd/styl-lsp` and every VS Code/Neovim
 Stylus user is a potential adopter. `styl fmt` and a linter fall out of the
 same AST work.
 
-## 5. Stylus → modern CSS migration tool
+  ✅ SHIPPED as N-005 (`cmd/styl-lsp`, `internal/lsp`; `styl fmt` /
+  `styl.Format`). Diagnostics, completion, hover with computed values,
+  go-to-definition across `@import`, symbols, color swatches, formatting.
+  fmt is a whitespace rewrite guarded by AST equality, not an AST printer,
+  because the AST has no comments (N-043). No linter yet (N-046).
+
+## 5. Stylus → modern CSS migration tool ✅ SHIPPED as N-010
 
 The exit-ramp play: legacy Stylus codebases want *off* Stylus now that vanilla
 CSS has native nesting, custom properties, and `color-mix()`. A `styl migrate`
@@ -66,6 +74,11 @@ that outputs modern CSS *preserving structure* (nesting kept as nesting,
 variables as `--vars` where possible, mixins flagged for manual review) would
 capture an audience that no longer wants a preprocessor at all — and go-styl
 is the only Stylus implementation healthy enough to build it on.
+
+  ✅ SHIPPED as N-010 (`styl migrate`, `styl.Migrate`/`MigrateFile`): native
+  nesting, root variables as `:root` custom properties, arithmetic kept live
+  as `calc()`, mixins/loops/conditionals/`@extend` resolved in place with
+  `/* styl-migrate: … */` review notes.
 
 ## 6. Safe multi-tenant theme compilation
 

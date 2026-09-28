@@ -25,6 +25,11 @@ type line struct {
 
 // Parse parses Stylus source into a Stylesheet AST.
 func Parse(src string) (*ast.Stylesheet, error) {
+	// A multi-line object literal (`theme = {` … `}`) is folded onto one line
+	// first, so neither the brace normalizer nor the indentation tree sees
+	// its braces and pair lines as structure.
+	src = joinObjectLiterals(src)
+
 	// Brace/semicolon syntax is normalized into the indentation form first.
 	if usesBraces(src) {
 		src = bracesToIndent(src)
@@ -170,6 +175,13 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		if wordPrefix(text, "for") {
 			return parseFor(ln)
 		}
+		// Block mixin call: `+name(args)` with an indented body, which is
+		// passed to the mixin as its block.
+		if strings.HasPrefix(text, "+") {
+			if call, ok, err := parseBlockMixinCall(ln); ok || err != nil {
+				return call, err
+			}
+		}
 		// Function/mixin definition (block form): `name(params)` with a body.
 		if toks, err := lexLine(text, ln.lineNo); err == nil {
 			if name, inner, rest, ok := callSignature(toks); ok && onlyEOF(rest) {
@@ -266,6 +278,11 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		return &ast.Assignment{Name: toks[0].Text, Op: toks[1].Kind, Value: val, Line: ln.lineNo, Col: ln.indent + 1}, nil
 	}
 
+	// Object member assignment: obj.key = expr, obj[k] = expr, a.b[c] = expr.
+	if ma, ok, err := parseMemberAssign(toks, ln); ok || err != nil {
+		return ma, err
+	}
+
 	// Single-line function definition: name(params) = expr
 	if name, inner, rest, ok := callSignature(toks); ok && len(rest) >= 1 && rest[0].Kind == token.ASSIGN {
 		params, err := parseParams(inner, ln.lineNo)
@@ -317,6 +334,76 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		return nil, err
 	}
 	return &ast.Declaration{Property: toks[0].Text, Value: val, Important: important, Line: ln.lineNo, Col: ln.indent + 1}, nil
+}
+
+// parseBlockMixinCall parses a `+name(args)` header whose indented children
+// form the block passed to the mixin. ok is false when the header is not
+// shaped like a call, and the line is then a ruleset. The parentheses are
+// required and the name must touch the '+': a nested `+ li` or `+li` is an
+// adjacent-sibling selector, not a call.
+func parseBlockMixinCall(ln *line) (ast.Stmt, bool, error) {
+	toks, err := lexLine(ln.text[1:], ln.lineNo)
+	if err != nil || len(toks) < 3 || toks[0].SpaceBefore {
+		return nil, false, nil
+	}
+	name, inner, rest, ok := callSignature(toks)
+	if !ok || !onlyEOF(rest) {
+		return nil, false, nil
+	}
+	args, err := parseArgs(inner, ln.lineNo)
+	if err != nil {
+		return nil, true, err
+	}
+	body, err := parseBlock(ln.children)
+	if err != nil {
+		return nil, true, err
+	}
+	return &ast.MixinCall{Name: name, Args: args, Block: body, Line: ln.lineNo, Col: ln.indent + 1}, true, nil
+}
+
+// parseMemberAssign recognizes `name(.key | [expr])+ (= | ?=) expr`. ok is
+// false when toks don't have that shape; err reports a malformed target or
+// value once the shape matched.
+func parseMemberAssign(toks []token.Token, ln *line) (ast.Stmt, bool, error) {
+	if len(toks) < 4 || toks[0].Kind != token.IDENT {
+		return nil, false, nil
+	}
+	if k := toks[1]; k.Kind != token.DOT && (k.Kind != token.LBRACKET || k.SpaceBefore) {
+		return nil, false, nil
+	}
+	// The first '=' or '?=' outside brackets and parentheses splits target
+	// from value.
+	depth := 0
+	eq := -1
+	for i, t := range toks {
+		switch t.Kind {
+		case token.LBRACKET, token.LPAREN, token.LBRACE:
+			depth++
+		case token.RBRACKET, token.RPAREN, token.RBRACE:
+			depth--
+		case token.ASSIGN, token.ASSIGNQ:
+			if depth == 0 && eq < 0 {
+				eq = i
+			}
+		}
+	}
+	if eq < 0 {
+		return nil, false, nil
+	}
+	target, err := parseExpr(append(toks[:eq:eq], token.Token{Kind: token.EOF, Line: ln.lineNo}), ln.lineNo)
+	if err != nil {
+		return nil, true, err
+	}
+	switch target.(type) {
+	case *ast.Member, *ast.Index:
+	default:
+		return nil, true, diag.Errorf(ln.lineNo, ln.indent+1, "invalid assignment target")
+	}
+	val, err := parseExpr(toks[eq+1:], ln.lineNo)
+	if err != nil {
+		return nil, true, err
+	}
+	return &ast.MemberAssign{Target: target, Op: toks[eq].Kind, Value: val, Line: ln.lineNo, Col: ln.indent + 1}, true, nil
 }
 
 // stripImportant removes a trailing `!important` (lexed as NOT IDENT("important"))
@@ -384,6 +471,10 @@ func parseImport(kw, rest string, lineNo, col int) (ast.Stmt, error) {
 		strings.HasPrefix(path, "//")
 	return &ast.Import{Path: path, Literal: literal, Once: once, Line: lineNo, Col: col}, nil
 }
+
+// SplitSelectors splits a selector group on its top-level commas (see
+// splitSelectors); the evaluator uses it for selector() arguments.
+func SplitSelectors(text string) []string { return splitSelectors(text) }
 
 // splitSelectors splits a selector line on top-level commas, ignoring commas
 // inside brackets, parentheses, or string literals (e.g. a[href$="a,b"] or

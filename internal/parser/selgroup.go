@@ -117,7 +117,7 @@ func isRuleSetHeader(ln *line) bool {
 // follows it (Stylus's list), so declarations such as `display:block` or
 // `cursor:default` are not taken for selectors.
 func looksLikeSelectorLine(text string) bool {
-	if text == "" {
+	if text == "" || hasTopLevelAssign(text) {
 		return false
 	}
 	switch c := text[0]; c {
@@ -186,6 +186,44 @@ var pseudoSelectors = map[string]bool{
 	"nth-column": true, "nth-last-column": true,
 	"first-line": true, "first-letter": true, "before": true, "after": true,
 	"selection": true,
+}
+
+// hasTopLevelAssign reports whether text contains an assignment `=` (or `?=`)
+// outside strings, brackets and parentheses. A selector's only `=` sits
+// inside an attribute selector (`[type=text]`), so such a line is a statement
+// like `obj.key = 1`, whose `obj.key` would otherwise read as `tag.class`.
+func hasTopLevelAssign(text string) bool {
+	depth := 0
+	var quote byte
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if quote != 0 {
+			if c == '\\' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '[', '(', '{':
+			depth++
+		case ']', ')', '}':
+			depth--
+		case '=':
+			if depth != 0 {
+				continue
+			}
+			prevOp := i > 0 && strings.IndexByte("=!<>", text[i-1]) >= 0
+			nextEq := i+1 < len(text) && text[i+1] == '='
+			if !prevOp && !nextEq {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isDigitByte(c byte) bool  { return c >= '0' && c <= '9' }

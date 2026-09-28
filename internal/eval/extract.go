@@ -32,6 +32,12 @@ func ExtractManifest(sheet *ast.Stylesheet, opts Options) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
+	return manifestOf(ev, nodes), nil
+}
+
+// manifestOf collects the Manifest of an evaluated tree: the names its
+// rendered CSS would contain and the evaluator's final root-scope variables.
+func manifestOf(ev *evaluator, nodes []css.Node) *Manifest {
 	names := css.CollectNames(nodes)
 	m := &Manifest{
 		Classes:   names.Classes,
@@ -42,5 +48,28 @@ func ExtractManifest(sheet *ast.Stylesheet, opts Options) (*Manifest, error) {
 		m.Vars = append(m.Vars, ManifestVar{Name: name, Value: value.Deref(v).CSS(true)})
 	}
 	sort.Slice(m.Vars, func(i, j int) bool { return m.Vars[i].Name < m.Vars[j].Name })
-	return m, nil
+	return m
+}
+
+// EvaluateScoped evaluates a stylesheet as a scoped component: class and
+// @keyframes names are renamed via rename (see css.Scope) before rendering.
+// It returns the rendered CSS, the Manifest of the sheet in local names (so
+// generated constants are named after what the author wrote), and the
+// local -> scoped mapping of every renamed name.
+//
+// The Manifest is collected before renaming: it lists local class names plus
+// any class that only appears inside ":global(...)" (those simply have no
+// entry in the mapping).
+func EvaluateScoped(sheet *ast.Stylesheet, opts Options, rename func(string) string) (string, *Manifest, map[string]string, error) {
+	ev, nodes, err := evalNodes(sheet, opts)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	m := manifestOf(ev, nodes)
+	renamed := css.Scope(nodes, rename)
+	out := css.RenderSheet(nodes, opts.Pretty, nil)
+	if err := ev.checkOutput(out); err != nil {
+		return "", nil, nil, err
+	}
+	return out, m, renamed, nil
 }

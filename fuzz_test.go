@@ -53,5 +53,6 @@ func FuzzCompile(f *testing.F) {
 		_, _ = Compile(src, Options{Pretty: true})
 		_, _ = Compile(src, Options{MergeDuplicates: true})
 		_, _, _ = CompileMap(src, Options{Filename: "fuzz.styl"})
+		_, _ = Migrate(src, Options{}, MigrateOptions{})
 	})
 }
