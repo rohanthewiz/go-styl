@@ -129,10 +129,12 @@ func (s *Server) dispatch(m *message) (any, *rpcError) {
 		s.update(d, p.ContentChanges[len(p.ContentChanges)-1].Text)
 		return nil, nil
 	case "textDocument/didSave":
-		// A saved file may be imported by other open documents, whose
-		// compiles read imports from disk: re-analyze them all.
+		// Open documents already compile against each other's editor text
+		// (overlayFS), so a save changes nothing they see. It is still the
+		// cue that files may have changed on disk behind the editor's back
+		// (a branch switch, a generator), so everything is re-analyzed.
 		for _, d := range s.docs {
-			s.update(d, d.text)
+			s.refresh(d)
 		}
 		return nil, nil
 	case "textDocument/didClose":
@@ -140,9 +142,15 @@ func (s *Server) dispatch(m *message) (any, *rpcError) {
 		if err := unmarshal(m.Params, &p); err != nil {
 			return nil, err
 		}
+		closed := s.docs[p.TextDocument.URI]
 		delete(s.docs, p.TextDocument.URI)
 		// Clear the closed file's diagnostics from the problems view.
 		_ = s.c.notify("textDocument/publishDiagnostics", PublishDiagnosticsParams{URI: p.TextDocument.URI, Diagnostics: []Diagnostic{}})
+		// Closing a buffer with unsaved edits reverts importers to the text
+		// on disk.
+		if closed != nil {
+			s.refreshDependents(closed)
+		}
 		return nil, nil
 
 	case "textDocument/hover":
@@ -226,12 +234,48 @@ func (s *Server) initialize() any {
 	}
 }
 
-// update replaces a document's text, re-analyzes it and publishes its
-// diagnostics.
+// update replaces a document's text, re-analyzes it and every open document
+// whose last compile read it, and publishes their diagnostics.
 func (s *Server) update(d *document, text string) {
 	d.text = text
 	d.lines = strings.Split(text, "\n")
-	d.an = analyze(d.path, text, s.overlay)
+	s.refresh(d)
+	s.refreshDependents(d)
+}
+
+// refreshDependents re-analyzes the other open documents that import d
+// (directly or through other files; an analysis's deps are transitive, so
+// one pass is enough and nothing cascades).
+func (s *Server) refreshDependents(d *document) {
+	if d.path == "" {
+		return
+	}
+	key := absPath(d.path)
+	for _, o := range s.docs {
+		// A document mid-edit that doesn't parse has no deps of its own; its
+		// last good analysis says what it imports.
+		if o != d && (o.an != nil && o.an.deps[key] || o.lastGood != nil && o.lastGood.deps[key]) {
+			s.refresh(o)
+		}
+	}
+}
+
+// openFiles maps the absolute path of every open file-backed document to
+// its editor text: the overlay an analysis compiles against.
+func (s *Server) openFiles() map[string]string {
+	out := make(map[string]string, len(s.docs))
+	for _, d := range s.docs {
+		if d.path != "" {
+			out[absPath(d.path)] = d.text
+		}
+	}
+	return out
+}
+
+// refresh re-analyzes a document's current text and publishes its
+// diagnostics.
+func (s *Server) refresh(d *document) {
+	d.an = analyze(d.path, d.text, s.openFiles())
 	if d.an.sheet != nil {
 		d.lastGood = d.an
 	}

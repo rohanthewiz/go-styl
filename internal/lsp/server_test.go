@@ -295,3 +295,82 @@ func TestServerFeatures(t *testing.T) {
 		t.Errorf("Serve: %v", err)
 	}
 }
+
+// changeWatch sends a full-text change to uri and returns the diagnostics
+// then published for watch (a document that imports uri).
+func (c *client) changeWatch(uri, text, watch string) []Diagnostic {
+	c.t.Helper()
+	c.notify("textDocument/didChange", map[string]any{
+		"textDocument":   map[string]any{"uri": uri, "version": 3},
+		"contentChanges": []map[string]any{{"text": text}},
+	})
+	c.waitDiags(uri)
+	return c.waitDiags(watch)
+}
+
+// TestUnsavedImportOverlay: an unsaved edit to an open imported file reaches
+// the importer's diagnostics and hover values right away (N-045), and
+// closing the buffer without saving reverts the importer to the disk text.
+func TestUnsavedImportOverlay(t *testing.T) {
+	dir, uri, src := project(t)
+	varsURI := pathToURI(filepath.Join(dir, "_vars.styl"))
+	varsSrc, _ := os.ReadFile(filepath.Join(dir, "_vars.styl"))
+	c := newClient(t)
+	c.open(uri, src)
+	c.open(varsURI, string(varsSrc))
+	c.waitDiags(uri) // main imports _vars, so it is re-analyzed too
+
+	hoverGap := func() string {
+		var h Hover
+		json.Unmarshal(c.call("textDocument/hover", pos(uri, 3, 10)), &h)
+		return h.Contents.Value
+	}
+	if v := hoverGap(); !strings.Contains(v, "Computed: `12px`") {
+		t.Fatalf("hover before edit: %q", v)
+	}
+
+	// pad 4px → 5px, unsaved: gap = pad * 3 is now 15px.
+	edited := strings.Replace(string(varsSrc), "pad = 4px", "pad = 5px", 1)
+	if diags := c.changeWatch(varsURI, edited, uri); len(diags) != 0 {
+		t.Fatalf("importer diagnostics after a clean edit: %+v", diags)
+	}
+	if v := hoverGap(); !strings.Contains(v, "Computed: `15px`") {
+		t.Errorf("hover after unsaved edit: %q", v)
+	}
+
+	// Breaking the import shows on the importer's @import line.
+	diags := c.changeWatch(varsURI, edited+".x\n  +nope()\n", uri)
+	if len(diags) != 1 || diags[0].Range.Start.Line != 0 || !strings.Contains(diags[0].Message, "_vars.styl:7") {
+		t.Errorf("importer diagnostics after a breaking edit: %+v", diags)
+	}
+
+	// Close without saving: the importer compiles the disk text again.
+	c.notify("textDocument/didClose", doc(varsURI))
+	c.waitDiags(varsURI)
+	if diags := c.waitDiags(uri); len(diags) != 0 {
+		t.Errorf("importer diagnostics after close: %+v", diags)
+	}
+	if v := hoverGap(); !strings.Contains(v, "Computed: `12px`") {
+		t.Errorf("hover after close: %q", v)
+	}
+}
+
+// TestOverlayFSUnsavedFile: a buffer that exists only in the editor can be
+// imported by name, and reads are recorded as deps while Stat probes aren't.
+func TestOverlayFSUnsavedFile(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "main.styl")
+	newFile := filepath.Join(dir, "_new.styl")
+	os.WriteFile(filepath.Join(dir, "_disk.styl"), []byte("d = 1px\n"), 0o644)
+	src := "@import '_new'\n@import '_disk'\n.a\n  width n + d\n"
+	an := analyze(main, src, map[string]string{newFile: "n = 2px\n", main: src})
+	if len(an.diags) != 0 {
+		t.Fatalf("diags: %+v", an.diags)
+	}
+	if an.vars["n"] != "2px" {
+		t.Errorf("n = %q", an.vars["n"])
+	}
+	if !an.deps[newFile] || !an.deps[filepath.Join(dir, "_disk.styl")] || len(an.deps) != 2 {
+		t.Errorf("deps: %v", an.deps)
+	}
+}

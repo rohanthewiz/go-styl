@@ -29,6 +29,11 @@ type analysis struct {
 	defs  []def             // definitions in the document, then in its imports
 	vars  map[string]string // computed root-scope variable values
 	diags []Diagnostic
+	// deps is the absolute OS paths of every file the compile read (the
+	// transitive imports, plus files read by built-ins such as json()). The
+	// server re-analyzes this document when one of them changes in the
+	// editor.
+	deps map[string]bool
 }
 
 // defKind distinguishes the two kinds of name a Stylus sheet defines.
@@ -70,10 +75,15 @@ func (d def) visibleAt(line int) bool {
 const evalTimeout = time.Second
 
 // analyze builds the analysis of a document. path is its OS path ("" for an
-// untitled buffer); overlay returns the text of other open documents so
-// definitions come from unsaved editor state.
-func analyze(path, text string, overlay func(path string) (string, bool)) *analysis {
-	a := &analysis{vars: map[string]string{}}
+// untitled buffer); open maps the absolute OS path of every open document to
+// its editor text, so both the definition index and the compile see unsaved
+// edits to imported files.
+func analyze(path, text string, open map[string]string) *analysis {
+	a := &analysis{vars: map[string]string{}, deps: map[string]bool{}}
+	overlay := func(p string) (string, bool) {
+		t, ok := open[absPath(p)]
+		return t, ok
+	}
 	lines := strings.Split(text, "\n")
 
 	sheet, err := parser.Parse(text)
@@ -88,12 +98,25 @@ func analyze(path, text string, overlay func(path string) (string, bool)) *analy
 	// Evaluate in a sandbox over an os.DirFS at the filesystem root: the
 	// sandbox's step/time/value budgets need an fs.FS (it never touches the
 	// OS disk directly), and a root DirFS gives imports the same reach a
-	// normal compile has.
+	// normal compile has. The open documents are laid over it (overlayFS),
+	// keyed by their fs path under that root.
 	root, fsPath := fsLocation(path)
+	files := map[string]string{}
+	for p, t := range open {
+		if rel, err := filepath.Rel(root, p); err == nil && !strings.HasPrefix(rel, "..") {
+			files[filepath.ToSlash(rel)] = t
+		}
+	}
+	ofs := newOverlayFS(os.DirFS(root), files)
+	defer func() {
+		for _, name := range ofs.deps() {
+			a.deps[filepath.Join(root, filepath.FromSlash(name))] = true
+		}
+	}()
 	var warns []string
 	opts := eval.Options{
 		Pretty:   true,
-		FS:       os.DirFS(root),
+		FS:       ofs,
 		Filename: fsPath,
 		BaseDir:  filepathDirSlash(fsPath),
 		Warn:     func(msg string) { warns = append(warns, msg) },
@@ -195,6 +218,15 @@ func errDiag(err error, path, fsRoot string, lines []string, sheet *ast.Styleshe
 		}
 	}
 	return Diagnostic{Range: r, Severity: sev, Source: "styl", Message: msg}
+}
+
+// absPath is p made absolute (p itself if that fails), the key the server
+// uses to match documents to files.
+func absPath(p string) string {
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
 }
 
 func samePath(a, b string) bool {
