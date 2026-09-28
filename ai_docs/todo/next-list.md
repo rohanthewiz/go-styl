@@ -29,25 +29,15 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-048
+**Next ID:** N-049
 
 ## Open
 
-- **N-045** · raised `2026-0927-1931-n005-lsp-and-fmt` · value low
-  The LSP compiles imports from disk. An unsaved edit to an imported file
-  shows in definitions and completion (they read the editor's text), but
-  not in the importer's diagnostics or hover values until it's saved. The
-  fix is an fs.FS overlay of open documents for the analysis compile.
-- **N-046** · raised `2026-0927-1931-n005-lsp-and-fmt` · value low
-  LSP gaps: find references / rename, signature help, CSS property-name
-  completion, and a linter (unused variables and mixins, duplicate
-  properties). `def` already records scope spans, which references would
-  need.
-- **N-047** · raised `2026-0927-1931-n005-lsp-and-fmt` · value low
-  `styl fmt` doesn't touch statement spelling: `prop: value` vs
-  `prop value`, spacing around `=`, and `,` spacing stay as written. In
-  mixed-syntax files, lines outside braces keep their indentation. Each
-  of these needs its own rule, checked by the same AST guard.
+- **N-048** · raised `2026-0927-2107-go-styl-n045-n046-n047-lsp-fmt` · value low
+  Built-in signatures for the LSP. `eval.BuiltinNames` has names only, so
+  signature help returns nothing for `darken(` and hover says just
+  "Built-in function". A parameter list per built-in (in the registry)
+  would feed both.
 
 ## Roadmap
 
@@ -83,6 +73,30 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-047** · raised `2026-0927-1931-n005-lsp-and-fmt` · closed 2026-09-27, `2026-0927-2107-go-styl-n045-n046-n047-lsp-fmt`
+  `styl fmt` statement spelling (`internal/parser/respell.go`), one rule
+  per statement kind, located from the parse. Declarations: `prop: value`
+  spacing, always a colon in braces, and in indentation syntax the file's
+  majority form (a tie keeps each). ` = ` / ` ?= ` in assignments and
+  parameter defaults, `, ` in values (not selectors, strings or `url()`).
+  Per-line AST guard (`applyGuarded`). Mixed-syntax lines outside braces
+  are re-indented by `bracesToIndent`'s depth rule. `FuzzFormat` checks
+  idempotency; three stray `\r`/`\f` cases fixed.
+- **N-046** · raised `2026-0927-1931-n005-lsp-and-fmt` · closed 2026-09-27, `2026-0927-2107-go-styl-n045-n046-n047-lsp-fmt`
+  LSP references and rename (every open document taken as a compile root,
+  so partials sharing the root scope are covered; use sites from AST names
+  mapped onto source lines; property names count as transparent mixin
+  calls), prepareRename, signature help for user mixins/functions, CSS
+  property-name completion, and `styl-lint` diagnostics: duplicate
+  properties (fallback idiom allowed), unused local variables and
+  functions, unused root mixins in entry sheets. Root variables are never
+  flagged. Built-in signatures → N-048.
+- **N-045** · raised `2026-0927-1931-n005-lsp-and-fmt` · closed 2026-09-27, `2026-0927-2107-go-styl-n045-n046-n047-lsp-fmt`
+  The LSP compiles through `overlayFS`: open buffers laid over the root
+  DirFS. It records each compile's reads as deps, and a change re-analyzes
+  the open documents that read the file. Closing an unsaved buffer reverts
+  them to disk. Limit: glob imports list directories from disk only.
 
 - **N-044** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · closed 2026-09-27, `2026-0927-2036-go-styl-n044-migrate-split`
   `styl migrate -split -o dir` / `MigrateOptions.Split`: each root-level
