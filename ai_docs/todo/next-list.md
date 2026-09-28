@@ -33,10 +33,6 @@ session's attempt to compile cema's stylesheets with go-styl.
 
 ## Open
 
-- **N-003** · raised `2026-0624-1853-go-styl-m6a-m6b` · value low
-  Value-level source mapping. Maps are selector/declaration/at-rule granular
-  today. Still in the README's Future line; dropped from the session lists
-  after `2026-0701-2034-m11-wasm-playground-deploy`.
 - **N-041** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value low
   Block mixins for user mixins: `+m(args)` with an indented body, and
   `{block}` inside the mixin to emit it. The parser now produces
@@ -73,7 +69,10 @@ session's attempt to compile cema's stylesheets with go-styl.
 
 Wanted, but deferred on purpose.
 
-(none — sort Open items here as priorities settle)
+- **N-003** · raised `2026-0624-1853-go-styl-m6a-m6b` · value low
+  Value-level source mapping. Maps are selector/declaration/at-rule granular
+  today. Still in the README's Future line; dropped from the session lists
+  after `2026-0701-2034-m11-wasm-playground-deploy`.
 
 ## Non-goals
 
