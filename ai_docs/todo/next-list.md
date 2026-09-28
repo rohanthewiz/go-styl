@@ -37,18 +37,18 @@ session's attempt to compile cema's stylesheets with go-styl.
   Value-level source mapping. Maps are selector/declaration/at-rule granular
   today. Still in the README's Future line; dropped from the session lists
   after `2026-0701-2034-m11-wasm-playground-deploy`.
-- **N-041** · raised (N-040 session, doc pending) · value low
+- **N-041** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value low
   Block mixins for user mixins: `+m(args)` with an indented body, and
   `{block}` inside the mixin to emit it. The parser now produces
   `MixinCall.Block`, but only the built-in `+prefix-classes` accepts one;
   a user mixin given a block is an error.
-- **N-043** · raised (N-010 session, doc pending) · value medium
+- **N-043** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value medium
   `styl migrate` drops source comments: `parser.stripComments` removes them
   before lexing, so the AST never sees them. A migration that loses the
   author's comments needs hand repair. Carrying `/* */` (and `//` as
   `/* */`) through needs comment nodes in the AST, at least at statement
   level.
-- **N-044** · raised (N-010 session, doc pending) · value low
+- **N-044** · raised `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009` · value low
   `styl migrate` inlines `.styl` imports into one output. Migrating a
   multi-file project file-for-file needs partials that define only
   variables/mixins to vanish, and other files to become
@@ -92,9 +92,9 @@ Wanted, but deferred on purpose.
   Recorded under README "Deliberate differences"; pinned by
   `difftest/corpus/bare-pseudo.styl`. `& :hover` gives the descendant form.
 
-- **N-042** · declined (N-040 session, doc pending) — `use()`. It loads a
-  JavaScript plugin; go-styl reports a clear error and points at
-  `Options.Globals` for passing Go values in.
+- **N-042** · declined `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009`
+  — `use()`. It loads a JavaScript plugin; go-styl reports a clear error
+  and points at `Options.Globals` for passing Go values in.
 
 ## Closed
 
@@ -125,7 +125,7 @@ are recorded in the session docs.
   - Tests: `internal/lsp/server_test.go` drives the server over pipes.
   - Follow-ups: N-045, N-046, N-047.
 
-- **N-011** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27 (session doc pending)
+- **N-011** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27, `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009`
   Safe multi-tenant theme compilation (killer feature #6): `Options.Sandbox`
   (`sandbox.go`, `internal/eval/sandbox.go`). No OS filesystem (imports and
   `*File` read only `Options.FS`), `AllowImport`, `Timeout`/`Context`,
@@ -134,7 +134,7 @@ are recorded in the session docs.
   `MaxSourceBytes`/`MaxImports`/`MaxOutputBytes` (output includes @extend
   grafts). Errors wrap `styl.ErrLimit`; warn() without a hook is dropped.
   Every entry point honors it, including Migrate's own statement walk.
-- **N-010** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27 (session doc pending)
+- **N-010** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27, `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009`
   `styl migrate`: Stylus → modern CSS (killer feature #5).
   `internal/eval/migrate.go` reuses the evaluator's scopes, expressions and
   built-ins, and swaps in its own statement walk. That walk builds a nested
@@ -155,7 +155,7 @@ are recorded in the session docs.
     was added to `FuzzCompile`.
   - Follow-ups: comments (N-043), file-for-file output (N-044).
 
-- **N-009** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27, `2026-0927-1838-go-styl-scoped-components`
+- **N-009** · raised `2026-0703-0846-m13-runtime-theming` · closed 2026-09-27, `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009`
   Scoped component styles. `styl.Component`/`ComponentFile` return
   `*Scoped{CSS, Names, Manifest}`. `css.Scope` renames, in place, class
   tokens in selectors (own, `@extend` grafts, merged duplicates),
@@ -166,16 +166,7 @@ are recorded in the session docs.
   makes `GoSource` emit scoped values (`Card = "card_…" // card`), and `styl
   gen -scoped [-css out.css]` wires it up. Tests in `component_test.go`.
 
-- **N-013** · raised `2026-0703-0959-playground-globals-exposure` · closed 2026-09-27, `2026-0927-1715-go-styl-live-reload`
-  Dev-mode live reload. `stylserve.Options.LiveReload` makes `stylhttp`
-  serve `_live.js` (it finds the page's stylesheets under its own prefix and
-  opens an EventSource per sheet) and `_live?css=<name>.css`, an SSE stream
-  that polls the engine every 500ms. A change event swaps in fresh CSS
-  without a reload; compile errors go to the console and the last good CSS
-  stays. No fs watcher dependency. Tests in `stylhttp/live_test.go`;
-  browser-verified.
-
-- **N-040** · raised `2026-0927-1712-go-styl-more-builtins` · closed 2026-09-27 (session doc pending)
+- **N-040** · raised `2026-0927-1712-go-styl-more-builtins` · closed 2026-09-27, `2026-0927-1838-go-styl-recovered-n040-n010-n011-n009`
   Objects (hashes) and the context built-ins. `value.Hash` is an ordered,
   by-reference object: literals (`{a: 1}`, multi-line `x = {` folded onto
   one line by `joinObjectLiterals`), `obj.key` / `obj[k]` reads, member
@@ -192,6 +183,15 @@ are recorded in the session docs.
   `selector-exists()` only sees rules compiled before it; an object as a
   property value is an error; `in` whose right side is a bare word stays CSS
   text in property values and call args (`to right in oklch`).
+
+- **N-013** · raised `2026-0703-0959-playground-globals-exposure` · closed 2026-09-27, `2026-0927-1715-go-styl-live-reload`
+  Dev-mode live reload. `stylserve.Options.LiveReload` makes `stylhttp`
+  serve `_live.js` (it finds the page's stylesheets under its own prefix and
+  opens an EventSource per sheet) and `_live?css=<name>.css`, an SSE stream
+  that polls the engine every 500ms. A change event swaps in fresh CSS
+  without a reload; compile errors go to the console and the last good CSS
+  stays. No fs watcher dependency. Tests in `stylhttp/live_test.go`;
+  browser-verified.
 
 - **N-004** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-27, `2026-0927-1712-go-styl-more-builtins`
   More built-ins, taken from a diff of Stylus's function list against the
