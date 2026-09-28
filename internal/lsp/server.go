@@ -431,7 +431,7 @@ func (s *Server) hover(d *document, pos Position) (any, *rpcError) {
 			fmt.Fprintf(&b, "\n\nDefined in `%s:%d`", df.File, df.Line)
 		}
 	} else if isBuiltin(word) {
-		fmt.Fprintf(&b, "```stylus\n%s()\n```\n\nBuilt-in function", word)
+		fmt.Fprintf(&b, "```stylus\n%s\n```\n\nBuilt-in function", strings.Join(eval.BuiltinSignatures(word), "\n"))
 	} else {
 		return nil, nil
 	}
@@ -496,7 +496,7 @@ func (s *Server) completion(d *document, pos Position) (any, *rpcError) {
 		}
 	}
 	for _, name := range builtinNames {
-		add(CompletionItem{Label: name, Kind: kindFunction, Detail: "built-in"})
+		add(CompletionItem{Label: name, Kind: kindFunction, Detail: "built-in " + strings.Join(eval.BuiltinSignatures(name), " | ")})
 	}
 	for _, k := range keywords {
 		add(CompletionItem{Label: k, Kind: kindKeyword})

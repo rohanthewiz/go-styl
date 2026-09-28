@@ -2,6 +2,7 @@ package eval
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/rohanthewiz/go-styl/internal/builtin"
 )
@@ -27,6 +28,16 @@ func BuiltinNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// BuiltinSignatures returns a built-in's calling forms as a user writes the
+// call (`darken(color, amount)`; rgba has two), or nil for a name that isn't
+// a built-in. The parameter conventions are builtin.Signatures's.
+func BuiltinSignatures(name string) []string {
+	if sig, ok := ctxBuiltinSigs[name]; ok {
+		return strings.Split(sig, " | ")
+	}
+	return builtin.Signatures(name)
 }
 
 // ResolveImport resolves a .styl import path on the OS filesystem exactly as

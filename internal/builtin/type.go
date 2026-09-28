@@ -9,14 +9,14 @@ import (
 )
 
 func init() {
-	register("typeof", typeOf)
-	register("type", typeOf)
-	register("unit", unit)
-	register("match", match)
-	register("light", light)
-	register("dark", dark)
-	register("opposite-position", oppositePosition)
-	register("error", errorFn)
+	register("typeof(value)", typeOf)
+	register("type(value)", typeOf)
+	register("unit(n, unit?)", unit)
+	register("match(pattern, str)", match)
+	register("light(color)", light)
+	register("dark(color)", dark)
+	register("opposite-position(positions)", oppositePosition)
+	register("error(msg)", errorFn)
 }
 
 func typeOf(args []value.Value) (value.Value, error) {

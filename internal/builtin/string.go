@@ -9,19 +9,19 @@ import (
 )
 
 func init() {
-	register("unquote", unquote)
-	register("quote", quote)
-	register("s", sprintf)
-	register("uppercase", caseFn("uppercase", strings.ToUpper))
-	register("lowercase", caseFn("lowercase", strings.ToLower))
-	register("substr", substr)
-	register("replace", replace)
-	register("split", split)
-	register("basename", basename)
-	register("dirname", dirname)
-	register("extname", extname)
-	register("pathjoin", pathjoin)
-	register("convert", convert)
+	register("unquote(str)", unquote)
+	register("quote(str)", quote)
+	register("s(fmt, args...)", sprintf)
+	register("uppercase(str)", caseFn("uppercase", strings.ToUpper))
+	register("lowercase(str)", caseFn("lowercase", strings.ToLower))
+	register("substr(str, start, length?)", substr)
+	register("replace(pattern, replacement, str)", replace)
+	register("split(delim, str)", split)
+	register("basename(path, ext?)", basename)
+	register("dirname(path)", dirname)
+	register("extname(path)", extname)
+	register("pathjoin(parts...)", pathjoin)
+	register("convert(str)", convert)
 }
 
 // strVal returns the textual content of a value (a Str's raw text, or any value's

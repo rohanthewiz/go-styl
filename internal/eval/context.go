@@ -47,6 +47,24 @@ func init() {
 	}
 }
 
+// ctxBuiltinSigs holds each context built-in's parameter list, in the form
+// builtin.register takes (see builtin.Signatures). ctxBuiltins can't carry
+// them in its values without every caller unwrapping a struct, so they sit
+// here beside it; TestBuiltinSignatures checks the two stay in step.
+var ctxBuiltinSigs = map[string]string{
+	"selector":        "selector(selectors...)",
+	"selectors":       "selectors()",
+	"selector-exists": "selector-exists(selector)",
+	"current-media":   "current-media()",
+	"define":          "define(name, value, global = false)",
+	"lookup":          "lookup(name)",
+	"add-property":    "add-property(name, expr)",
+	"warn":            "warn(msg)",
+	"use":             "use(path)",
+	"json":            "json(path, options?, prefix?)",
+	"prefix-classes":  "prefix-classes(prefix)",
+}
+
 // isBuiltinName reports whether name is a built-in of either kind.
 func isBuiltinName(name string) bool {
 	if _, ok := ctxBuiltins[name]; ok {

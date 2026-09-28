@@ -33,11 +33,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 
 ## Open
 
-- **N-048** · raised `2026-0927-2107-go-styl-n045-n046-n047-lsp-fmt` · value low
-  Built-in signatures for the LSP. `eval.BuiltinNames` has names only, so
-  signature help returns nothing for `darken(` and hover says just
-  "Built-in function". A parameter list per built-in (in the registry)
-  would feed both.
+None.
 
 ## Roadmap
 
@@ -73,6 +69,12 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-048** · raised `2026-0927-2107-go-styl-n045-n046-n047-lsp-fmt` · closed 2026-09-27, `2026-0927-2203-go-styl-n048-builtin-signatures`
+  `register("darken(color, amount)", f)`: each built-in registers under its
+  signature, so none can lack one; context built-ins keep theirs in
+  `ctxBuiltinSigs`. `eval.BuiltinSignatures` feeds signature help (built-in
+  fallback, multiple forms for rgba), hover and completion detail.
 
 - **N-047** · raised `2026-0927-1931-n005-lsp-and-fmt` · closed 2026-09-27, `2026-0927-2107-go-styl-n045-n046-n047-lsp-fmt`
   `styl fmt` statement spelling (`internal/parser/respell.go`), one rule

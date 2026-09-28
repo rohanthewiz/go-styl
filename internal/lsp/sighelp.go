@@ -3,6 +3,8 @@ package lsp
 import (
 	"sort"
 	"strings"
+
+	"github.com/rohanthewiz/go-styl/internal/eval"
 )
 
 // --- signature help ---
@@ -14,8 +16,9 @@ import (
 // rarely parses): scanning left from the cursor over code (comments and
 // strings masked), the first `(` not closed before the cursor opens the
 // call, and the word glued to its left names it. Commas at that paren depth
-// count the active parameter. Built-ins have no recorded parameter lists,
-// so they get no help.
+// count the active parameter. A name with no user definition in reach falls
+// back to the built-in of that name (a user function shadows a built-in, as
+// in a compile), whose parameter lists come from the builtin registry.
 func (s *Server) signatureHelp(d *document, pos Position) (any, *rpcError) {
 	if pos.Line < 0 || pos.Line >= len(d.lines) {
 		return nil, nil
@@ -58,24 +61,48 @@ func (s *Server) signatureHelp(d *document, pos Position) (any, *rpcError) {
 	if start == end {
 		return nil, nil
 	}
-	an := d.index()
-	if an == nil {
+	name := string(line[start:end])
+	var sigs []string
+	if an := d.index(); an != nil {
+		if df, ok := an.lookup(name, d.path, pos.Line+1, defFunc); ok {
+			sigs = []string{df.Sig}
+		}
+	}
+	if sigs == nil {
+		sigs = eval.BuiltinSignatures(name)
+	}
+	if sigs == nil {
 		return nil, nil
 	}
-	df, ok := an.lookup(string(line[start:end]), d.path, pos.Line+1, defFunc)
-	if !ok {
-		return nil, nil
+
+	// Each calling form is one SignatureInformation. The active one is the
+	// first that can take the arguments typed so far (commas+1 of them):
+	// with rgba's `rgba(red, green, blue, alpha) | rgba(color, alpha)`, both
+	// fit at the first comma and the first form stays active, and the
+	// four-argument form is the only candidate from the third argument on.
+	// When none fits (too many arguments), the last form is shown.
+	help := SignatureHelp{Signatures: []SignatureInformation{}, ActiveSignature: -1}
+	for i, sig := range sigs {
+		params := sigParams(sig)
+		rest := len(params) > 0 && strings.HasSuffix(params[len(params)-1], "...")
+		info := SignatureInformation{Label: sig, Parameters: []ParameterInformation{}}
+		for _, p := range params {
+			info.Parameters = append(info.Parameters, ParameterInformation{Label: p})
+		}
+		help.Signatures = append(help.Signatures, info)
+		if help.ActiveSignature < 0 && (commas < len(params) || rest) {
+			help.ActiveSignature = i
+		}
 	}
-	params := sigParams(df.Sig)
-	active := commas
-	if n := len(params); n > 0 && active >= n && strings.HasSuffix(params[n-1], "...") {
-		active = n - 1 // a rest parameter takes every remaining argument
+	if help.ActiveSignature < 0 {
+		help.ActiveSignature = len(sigs) - 1
 	}
-	info := SignatureInformation{Label: df.Sig, Parameters: []ParameterInformation{}}
-	for _, p := range params {
-		info.Parameters = append(info.Parameters, ParameterInformation{Label: p})
+	params := help.Signatures[help.ActiveSignature].Parameters
+	help.ActiveParameter = commas
+	if n := len(params); n > 0 && commas >= n && strings.HasSuffix(params[n-1].Label, "...") {
+		help.ActiveParameter = n - 1 // a rest parameter takes every remaining argument
 	}
-	return SignatureHelp{Signatures: []SignatureInformation{info}, ActiveParameter: active}, nil
+	return help, nil
 }
 
 // sigParams splits a definition line's parameter list (`name(a, b = f(1, 2),

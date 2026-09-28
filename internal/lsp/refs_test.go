@@ -144,7 +144,7 @@ func TestSignatureHelp(t *testing.T) {
 	// Text being typed doesn't parse; the index comes from the last good
 	// version.
 	c.open(uri, "pair(a, b = f(1, 2), rest...)\n  x a\n.a\n  color red\n")
-	c.change(uri, "pair(a, b = f(1, 2), rest...)\n  x a\n.a\n  +pair(1, \n  pair(1, 2, 3, 4)\n  darken(\n")
+	c.change(uri, "pair(a, b = f(1, 2), rest...)\n  x a\n.a\n  +pair(1, \n  pair(1, 2, 3, 4)\n  darken(red, \n  c rgba(1, 2, \n")
 	var h SignatureHelp
 	json.Unmarshal(c.call("textDocument/signatureHelp", pos(uri, 3, 11)), &h)
 	if len(h.Signatures) != 1 || h.Signatures[0].Label != "pair(a, b = f(1, 2), rest...)" || h.ActiveParameter != 1 {
@@ -157,8 +157,30 @@ func TestSignatureHelp(t *testing.T) {
 	if h.ActiveParameter != 2 {
 		t.Errorf("a rest parameter takes the extra arguments: %+v", h)
 	}
-	if raw := string(c.call("textDocument/signatureHelp", pos(uri, 5, 9))); raw != "null" {
-		t.Errorf("built-ins have no signature: %s", raw)
+
+	// Built-ins: parameter lists from the registry.
+	h = SignatureHelp{}
+	json.Unmarshal(c.call("textDocument/signatureHelp", pos(uri, 5, 14)), &h)
+	if len(h.Signatures) != 1 || h.Signatures[0].Label != "darken(color, amount)" || h.ActiveParameter != 1 {
+		t.Errorf("built-in signature help: %+v", h)
+	}
+	// rgba has two forms; from the third argument only the four-channel one fits.
+	h = SignatureHelp{}
+	json.Unmarshal(c.call("textDocument/signatureHelp", pos(uri, 6, 15)), &h)
+	if len(h.Signatures) != 2 || h.ActiveSignature != 0 || h.ActiveParameter != 2 ||
+		h.Signatures[1].Label != "rgba(color, alpha)" {
+		t.Errorf("rgba signature help: %+v", h)
+	}
+}
+
+func TestBuiltinHover(t *testing.T) {
+	uri := "untitled:bihover"
+	c := newClient(t)
+	c.open(uri, ".a\n  color darken(red, 10%)\n")
+	var h Hover
+	json.Unmarshal(c.call("textDocument/hover", pos(uri, 1, 10)), &h)
+	if !strings.Contains(h.Contents.Value, "darken(color, amount)") {
+		t.Errorf("hover: %q", h.Contents.Value)
 	}
 }
 

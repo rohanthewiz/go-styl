@@ -6,6 +6,7 @@ package builtin
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/rohanthewiz/go-styl/internal/value"
 )
@@ -17,7 +18,38 @@ type Func func(args []value.Value) (value.Value, error)
 // through register() in their init() functions.
 var Registry = map[string]Func{}
 
-func register(name string, f Func) { Registry[name] = f }
+// signatures maps function names to their parameter lists as a user would
+// write the call (`darken(color, amount)`), for editor tooling: signature
+// help and hover. Optional parameters show their default (`step = 1`) or,
+// when the default isn't a simple value, a trailing `?`; a rest parameter
+// ends in `...`. A function with more than one calling form lists each,
+// separated by " | ".
+var signatures = map[string]string{}
+
+// register adds a built-in under the name its signature starts with.
+//
+// The signature, not a bare name, is the key so that a built-in can't be
+// registered without one: the parameter list lives on the same line as the
+// registration and changes with it, instead of in a table elsewhere that
+// drifts out of date.
+func register(sig string, f Func) {
+	name, _, ok := strings.Cut(sig, "(")
+	if !ok {
+		panic("builtin: register signature without a parameter list: " + sig)
+	}
+	Registry[name] = f
+	signatures[name] = sig
+}
+
+// Signatures returns name's calling forms (usually one; rgba has two), or
+// nil if name isn't a registered built-in.
+func Signatures(name string) []string {
+	sig, ok := signatures[name]
+	if !ok {
+		return nil
+	}
+	return strings.Split(sig, " | ")
+}
 
 // Lookup returns the built-in for name, if any.
 func Lookup(name string) (Func, bool) {
