@@ -74,6 +74,8 @@ func groupSelectorLines(lines []*line) []*line {
 			text:     strings.Join(parts, ", "),
 			indent:   ln.indent,
 			lineNo:   ln.lineNo,
+			srcLine:  ln.srcLine,
+			srcCol:   ln.srcCol,
 			children: lines[j].children,
 			lead:     lead,
 			trail:    lines[j].trail,

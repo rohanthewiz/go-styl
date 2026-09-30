@@ -24,15 +24,15 @@ func isCondStart(text string) bool {
 func parseConds(lines []*line, i int) (ast.Stmt, int, error) {
 	head := lines[i]
 	if len(head.children) == 0 {
-		return nil, 0, diag.Errorf(head.lineNo, head.indent+1, "%q requires an indented block", head.text)
+		return nil, 0, diag.Errorf(head.srcLine, head.srcCol, "%q requires an indented block", head.text)
 	}
 
-	ifStmt := &ast.If{Line: head.lineNo, Col: head.indent + 1}
+	ifStmt := &ast.If{Line: head.srcLine, Col: head.srcCol}
 
 	// Leading if / unless.
 	switch {
 	case wordPrefix(head.text, "if"):
-		cond, err := condExpr(head.text[len("if"):], head.lineNo)
+		cond, err := condExpr(head.text[len("if"):], head.srcLine)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -42,7 +42,7 @@ func parseConds(lines []*line, i int) (ast.Stmt, int, error) {
 		}
 		ifStmt.Branches = append(ifStmt.Branches, ast.CondBranch{Cond: cond, Body: body})
 	case wordPrefix(head.text, "unless"):
-		cond, err := condExpr(head.text[len("unless"):], head.lineNo)
+		cond, err := condExpr(head.text[len("unless"):], head.srcLine)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -58,7 +58,7 @@ func parseConds(lines []*line, i int) (ast.Stmt, int, error) {
 		ln := lines[i]
 		switch {
 		case wordPrefix(ln.text, "else if"):
-			cond, err := condExpr(ln.text[len("else if"):], ln.lineNo)
+			cond, err := condExpr(ln.text[len("else if"):], ln.srcLine)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -96,7 +96,7 @@ func condExpr(text string, line int) (ast.Expr, error) {
 // line must have an indented body). As in reference Stylus, the first variable
 // is the element and the optional second is its index.
 func parseFor(ln *line) (ast.Stmt, error) {
-	toks, err := lexLine(ln.text[len("for"):], ln.lineNo)
+	toks, err := lexLine(ln.text[len("for"):], ln.srcLine)
 	if err != nil {
 		return nil, err
 	}
@@ -117,14 +117,14 @@ func parseFor(ln *line) (ast.Stmt, error) {
 			}
 			continue
 		}
-		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "malformed for-loop header")
+		return nil, diag.Errorf(ln.srcLine, ln.srcCol, "malformed for-loop header")
 	}
 	if pos >= len(toks) || toks[pos].Text != "in" {
-		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "for-loop missing 'in'")
+		return nil, diag.Errorf(ln.srcLine, ln.srcCol, "for-loop missing 'in'")
 	}
 	pos++ // consume 'in'
 
-	iter, err := parseExpr(toks[pos:], ln.lineNo)
+	iter, err := parseExpr(toks[pos:], ln.srcLine)
 	if err != nil {
 		return nil, err
 	}
@@ -134,14 +134,14 @@ func parseFor(ln *line) (ast.Stmt, error) {
 		return nil, err
 	}
 
-	f := &ast.For{Iterable: iter, Body: body, Line: ln.lineNo, Col: ln.indent + 1}
+	f := &ast.For{Iterable: iter, Body: body, Line: ln.srcLine, Col: ln.srcCol}
 	switch len(vars) {
 	case 1:
 		f.Value = vars[0]
 	case 2:
 		f.Value, f.Index = vars[0], vars[1]
 	default:
-		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "for-loop expects 1 or 2 variables, got %d", len(vars))
+		return nil, diag.Errorf(ln.srcLine, ln.srcCol, "for-loop expects 1 or 2 variables, got %d", len(vars))
 	}
 	return f, nil
 }

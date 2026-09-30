@@ -567,7 +567,8 @@ func collapseSpaces(s string) string {
 }
 
 // sameAST reports whether two parses describe the same stylesheet: equal
-// node for node, ignoring source positions (Line/Col fields) and, in the raw
+// node for node, ignoring source positions (Line/Col and a declaration's
+// ValueLine/ValueCol fields) and, in the raw
 // source-text fields the parser keeps verbatim (selectors, at-rule params,
 // @extend targets), ignoring whitespace-run differences that collapseSpaces
 // may introduce.
@@ -589,7 +590,8 @@ func sameValue(a, b reflect.Value, field string) bool {
 		t := a.Type()
 		for i := 0; i < t.NumField(); i++ {
 			name := t.Field(i).Name
-			if name == "Line" || name == "Col" {
+			switch name {
+			case "Line", "Col", "ValueLine", "ValueCol":
 				continue
 			}
 			if !sameValue(a.Field(i), b.Field(i), name) {

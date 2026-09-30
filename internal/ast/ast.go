@@ -28,11 +28,18 @@ type RuleSet struct {
 }
 
 // Declaration is a CSS property assignment, e.g. `color blue` or `width base * 2`.
+//
+// ValueLine and ValueCol locate the value expression's first character, so a
+// source map can point the rendered value (not just the property) back at the
+// expression that produced it. Expressions carry no positions of their own; the
+// value's start is the one expression position the parser records. Zero means
+// unknown (a declaration built by hand, such as a transparent mixin call's).
 type Declaration struct {
-	Property  string
-	Value     Expr
-	Important bool // trailing !important
-	Line, Col int  // 1-based source position
+	Property            string
+	Value               Expr
+	Important           bool // trailing !important
+	Line, Col           int  // 1-based source position
+	ValueLine, ValueCol int  // 1-based source position of the value
 }
 
 // Assignment binds a variable, e.g. `base = 10px` or `x ?= 1`.

@@ -79,7 +79,8 @@ func expandSemicolons(lines []*line) []*line {
 			// errors point at the statement that caused them. For a line
 			// joined from a comma continuation the column of a later piece
 			// is an approximation (it counts across the joined text).
-			piece := &line{text: sg.text, indent: ln.indent + sg.col, lineNo: ln.lineNo}
+			piece := &line{text: sg.text, indent: ln.indent + sg.col, lineNo: ln.lineNo,
+				srcLine: ln.srcLine, srcCol: ln.srcCol + sg.col}
 			if k == 0 {
 				piece.lead = ln.lead
 			}

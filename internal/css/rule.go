@@ -14,11 +14,17 @@ type Node interface {
 }
 
 // Statement is a single resolved CSS declaration, e.g. {Property:"color", Value:"#000"}.
+//
+// Pos maps the property and ValuePos the value: a source map gets a segment at
+// each, so a tool asking about a position inside the rendered value lands on the
+// value expression (`base * 2`), not on the property name. ValuePos is zero for
+// statements with no source expression (add-property(), custom properties).
 type Statement struct {
 	Property  string
 	Value     string
 	Important bool
 	Pos       Pos
+	ValuePos  Pos
 }
 
 // Rule is a resolved CSS rule: a fully-qualified selector plus its declarations.
@@ -126,6 +132,9 @@ func (rule *Rule) Render(p *Printer) {
 		if p.pretty {
 			p.write(" ")
 		}
+		// The value segment runs to the next segment, so a trailing
+		// `!important` and `;` share it.
+		p.mark(st.ValuePos)
 		p.write(st.Value)
 		if st.Important {
 			if p.pretty {

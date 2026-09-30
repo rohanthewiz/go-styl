@@ -60,8 +60,9 @@ Under active development -- consider this Alpha. The compiler currently supports
   **`!important`**, and whitespace-sensitive unary `-`/`+`
   (`margin 10px -5px` is a list; `10px - 5px` subtracts)
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
-- **Source maps** (Source Map v3) mapping selectors and declarations back to the
-  `.styl` source
+- **Source maps** (Source Map v3) mapping selectors, declarations and each
+  declaration's value back to the `.styl` source (the value to the expression
+  that produced it: `color: red` maps `red` to the `c` in `color c`)
 - **Positioned errors**: compile errors read `file:line:col: message` (with
   "did you mean" hints for misspelled mixins) and carry `file`/`line`/`col` as
   structured [serr](https://github.com/rohanthewiz/serr) attributes for
@@ -864,8 +865,9 @@ Things to be aware of:
   default); standard Stylus does not fold identical rule bodies.
 - Function/mixin call depth is capped at 256 and a rule's combined selector
   count at 16384, so unbounded recursion errors out instead of hanging.
-- In brace syntax, statements that share a source line with an earlier one
-  (one-liner blocks) report approximate positions; multi-line files are exact.
+- Source maps name only the entry file: rules and declarations from an
+  `@import`ed file are mapped as if they were in the entry file, so DevTools
+  shows the wrong line for them.
 
 ## Compatibility with reference Stylus
 
@@ -1002,7 +1004,8 @@ Packages live under `internal/`: `token`, `lexer`, `ast`, `parser`, `value`, `ev
 - [x] `styl fmt` (`styl.Format`) and `styl-lsp`, a language server: diagnostics, completion,
   hover with computed values, go-to-definition, references and rename across imports,
   signature help, lint, symbols, color swatches
-- [ ] Future: value-level source mapping, deeper compress parity, more built-ins
+- [x] Value-level source mapping: each declaration value maps to its expression
+- [ ] Future: deeper compress parity, more built-ins
 
 ## License
 

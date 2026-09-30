@@ -362,6 +362,7 @@ func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 			Value:     v.CSS(ev.opts.Pretty),
 			Important: s.Important,
 			Pos:       css.Pos{Line: s.Line, Col: s.Col},
+			ValuePos:  css.Pos{Line: s.ValueLine, Col: s.ValueCol},
 		})
 		return nil
 	case *ast.RuleSet:

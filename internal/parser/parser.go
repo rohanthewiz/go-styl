@@ -17,10 +17,18 @@ const tabWidth = 4
 
 // line is a node in the indentation tree.
 type line struct {
-	text     string // content with leading indentation and comments removed
-	indent   int    // indentation width (tabs expanded to tabWidth)
-	lineNo   int    // 1-based source line number
-	children []*line
+	text   string // content with leading indentation and comments removed
+	indent int    // indentation width (tabs expanded to tabWidth)
+	lineNo int    // 1-based source line number
+	// srcLine and srcCol are the 1-based source position of text's first
+	// character, the position every statement parsed from the line
+	// reports. They differ from lineNo and indent+1 in two cases: indent
+	// is a width (a tab counts to the next multiple of tabWidth) where
+	// srcCol counts characters, and in brace syntax the line is a
+	// re-indented rewrite whose true position comes from bracesToIndent
+	// (a one-line block's statements land on later output lines).
+	srcLine, srcCol int
+	children        []*line
 
 	// Comments attached to the line (ParseWithComments only): lead ones
 	// become statements before the line's own statement, trail ones after
@@ -57,11 +65,12 @@ func parse(src string, withComments bool) (*ast.Stylesheet, error) {
 	src = joinObjectLiterals(src)
 
 	// Brace/semicolon syntax is normalized into the indentation form first.
+	var pos []srcPos
 	if usesBraces(src) {
-		src = bracesToIndent(src)
+		src, pos = bracesToIndent(src)
 	}
 
-	root, err := buildTree(src, comments)
+	root, err := buildTree(src, comments, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +87,11 @@ func parse(src string, withComments bool) (*ast.Stylesheet, error) {
 
 // buildTree strips comments and assembles the indentation tree under a
 // synthetic root line (indent -1). comments, when given, are attached to
-// the tree's lines (see attachComments).
-func buildTree(src string, comments []srcComment) (*line, error) {
+// the tree's lines (see attachComments). pos, when given, is the source
+// position of each line of a brace-syntax rewrite (see bracesToIndent);
+// without it a line's position is its own line number and the character
+// column after its indentation.
+func buildTree(src string, comments []srcComment, pos []srcPos) (*line, error) {
 	cleaned := stripComments(src)
 	att := newCommentAttacher(comments, cleaned)
 
@@ -116,7 +128,13 @@ func buildTree(src string, comments []srcComment) (*line, error) {
 			continue
 		}
 
-		ln := &line{text: content, indent: indent, lineNo: i + 1}
+		ln := &line{text: content, indent: indent, lineNo: i + 1, srcLine: i + 1,
+			// Indentation is ASCII blanks, so its byte length is its
+			// character count.
+			srcCol: len(raw) - len(strings.TrimLeft(raw, " \t")) + 1}
+		if i < len(pos) && pos[i].line > 0 {
+			ln.srcLine, ln.srcCol = pos[i].line, pos[i].col
+		}
 		att.place(ln, stack)
 		if strings.HasSuffix(content, ",") {
 			cont = ln
@@ -134,6 +152,9 @@ func buildTree(src string, comments []srcComment) (*line, error) {
 	att.finish(root, stack)
 	return root, nil
 }
+
+// srcPos is a 1-based source position; the zero value means unknown.
+type srcPos struct{ line, col int }
 
 // splitIndent returns the indentation width and the trimmed content of a line.
 func splitIndent(raw string) (int, string) {
@@ -183,7 +204,7 @@ func parseBlock(lines []*line) ([]ast.Stmt, error) {
 		if isCondStart(ln.text) {
 			stmt, next, err := parseConds(lines, i)
 			if err != nil {
-				return nil, diag.WrapPos(err, "", ln.lineNo, ln.indent+1)
+				return nil, diag.WrapPos(err, "", ln.srcLine, ln.srcCol)
 			}
 			// The chain is one statement. Comments leading its first line
 			// go before the If; the rest (on or above an else line, or
@@ -203,7 +224,7 @@ func parseBlock(lines []*line) ([]ast.Stmt, error) {
 		if err != nil {
 			// Anchor errors from the line's lexing/expression parsing (which only
 			// know the line) at the line's leading column.
-			return nil, diag.WrapPos(err, "", ln.lineNo, ln.indent+1)
+			return nil, diag.WrapPos(err, "", ln.srcLine, ln.srcCol)
 		}
 		stmts = append(stmts, commentStmts(ln.lead)...)
 		if stmt != nil {
@@ -234,9 +255,9 @@ func parseLine(ln *line) (ast.Stmt, error) {
 			}
 		}
 		// Function/mixin definition (block form): `name(params)` with a body.
-		if toks, err := lexLine(text, ln.lineNo); err == nil {
+		if toks, err := lexLine(text, ln.srcLine); err == nil {
 			if name, inner, rest, ok := callSignature(toks); ok && onlyEOF(rest) {
-				params, err := parseParams(inner, ln.lineNo)
+				params, err := parseParams(inner, ln.srcLine)
 				if err != nil {
 					return nil, err
 				}
@@ -244,7 +265,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 				if err != nil {
 					return nil, err
 				}
-				return &ast.FuncDef{Name: name, Params: params, Body: body, Line: ln.lineNo, Col: ln.indent + 1}, nil
+				return &ast.FuncDef{Name: name, Params: params, Body: body, Line: ln.srcLine, Col: ln.srcCol}, nil
 			}
 		}
 		// Otherwise a ruleset; selectors are kept raw (not tokenized).
@@ -252,7 +273,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ast.RuleSet{Selectors: splitSelectors(text), Body: body, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		return &ast.RuleSet{Selectors: splitSelectors(text), Body: body, Line: ln.srcLine, Col: ln.srcCol}, nil
 	}
 
 	// --- Leaf lines ---
@@ -265,16 +286,16 @@ func parseLine(ln *line) (ast.Stmt, error) {
 		}
 		target := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(text[len(kw):]), ";"))
 		if target == "" {
-			return nil, diag.Errorf(ln.lineNo, ln.indent+1, "@extend requires a selector")
+			return nil, diag.Errorf(ln.srcLine, ln.srcCol, "@extend requires a selector")
 		}
-		return &ast.Extend{Target: target, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		return &ast.Extend{Target: target, Line: ln.srcLine, Col: ln.srcCol}, nil
 	}
 
 	// @import / @require <string | url(...)>. @require shares @import's
 	// syntax; the only difference (import once) is applied by the evaluator.
 	for _, kw := range []string{"@import", "@require"} {
 		if wordPrefix(text, kw) {
-			return parseImport(kw, strings.TrimSpace(text[len(kw):]), ln.lineNo, ln.indent+1)
+			return parseImport(kw, strings.TrimSpace(text[len(kw):]), ln.srcLine, ln.srcCol)
 		}
 	}
 
@@ -288,27 +309,27 @@ func parseLine(ln *line) (ast.Stmt, error) {
 	// a leading '{' as interpolation in selector position. A trailing ';'
 	// (brace syntax) is allowed.
 	if strings.TrimSpace(strings.TrimSuffix(text, ";")) == "{block}" {
-		return &ast.BlockSlot{Line: ln.lineNo, Col: ln.indent + 1}, nil
+		return &ast.BlockSlot{Line: ln.srcLine, Col: ln.srcCol}, nil
 	}
 
 	// return [expr]
 	if wordPrefix(text, "return") {
 		rest := strings.TrimSpace(text[len("return"):])
 		if rest == "" {
-			return &ast.Return{Line: ln.lineNo, Col: ln.indent + 1}, nil
+			return &ast.Return{Line: ln.srcLine, Col: ln.srcCol}, nil
 		}
-		toks, err := lexLine(rest, ln.lineNo)
+		toks, err := lexLine(rest, ln.srcLine)
 		if err != nil {
 			return nil, err
 		}
-		val, err := parseExpr(toks, ln.lineNo)
+		val, err := parseExpr(toks, ln.srcLine)
 		if err != nil {
 			return nil, err
 		}
-		return &ast.Return{Value: val, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		return &ast.Return{Value: val, Line: ln.srcLine, Col: ln.srcCol}, nil
 	}
 
-	toks, err := lexLine(text, ln.lineNo)
+	toks, err := lexLine(text, ln.srcLine)
 	if err != nil {
 		return nil, err
 	}
@@ -316,25 +337,25 @@ func parseLine(ln *line) (ast.Stmt, error) {
 	// Explicit mixin call: +name or +name(args)
 	if toks[0].Kind == token.PLUS && len(toks) >= 2 && toks[1].Kind == token.IDENT {
 		if name, inner, rest, ok := callSignature(toks[1:]); ok && onlyEOF(rest) {
-			args, err := parseArgs(inner, ln.lineNo)
+			args, err := parseArgs(inner, ln.srcLine)
 			if err != nil {
 				return nil, err
 			}
-			return &ast.MixinCall{Name: name, Args: args, Line: ln.lineNo, Col: ln.indent + 1}, nil
+			return &ast.MixinCall{Name: name, Args: args, Line: ln.srcLine, Col: ln.srcCol}, nil
 		}
 		if len(toks) == 3 && toks[2].Kind == token.EOF {
-			return &ast.MixinCall{Name: toks[1].Text, Line: ln.lineNo, Col: ln.indent + 1}, nil
+			return &ast.MixinCall{Name: toks[1].Text, Line: ln.srcLine, Col: ln.srcCol}, nil
 		}
 	}
 
 	// Variable assignment: name = expr  or  name ?= expr
 	if toks[0].Kind == token.IDENT && len(toks) >= 2 &&
 		(toks[1].Kind == token.ASSIGN || toks[1].Kind == token.ASSIGNQ) {
-		val, err := parseExpr(toks[2:], ln.lineNo)
+		val, err := parseExpr(toks[2:], ln.srcLine)
 		if err != nil {
 			return nil, err
 		}
-		return &ast.Assignment{Name: toks[0].Text, Op: toks[1].Kind, Value: val, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		return &ast.Assignment{Name: toks[0].Text, Op: toks[1].Kind, Value: val, Line: ln.srcLine, Col: ln.srcCol}, nil
 	}
 
 	// Object member assignment: obj.key = expr, obj[k] = expr, a.b[c] = expr.
@@ -344,55 +365,63 @@ func parseLine(ln *line) (ast.Stmt, error) {
 
 	// Single-line function definition: name(params) = expr
 	if name, inner, rest, ok := callSignature(toks); ok && len(rest) >= 1 && rest[0].Kind == token.ASSIGN {
-		params, err := parseParams(inner, ln.lineNo)
+		params, err := parseParams(inner, ln.srcLine)
 		if err != nil {
 			return nil, err
 		}
-		val, err := parseExpr(rest[1:], ln.lineNo)
+		val, err := parseExpr(rest[1:], ln.srcLine)
 		if err != nil {
 			return nil, err
 		}
-		return &ast.FuncDef{Name: name, Params: params, Body: []ast.Stmt{&ast.Return{Value: val, Line: ln.lineNo, Col: ln.indent + 1}}, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		return &ast.FuncDef{Name: name, Params: params, Body: []ast.Stmt{&ast.Return{Value: val, Line: ln.srcLine, Col: ln.srcCol}}, Line: ln.srcLine, Col: ln.srcCol}, nil
 	}
 
 	// Bare mixin call: a single identifier on its own line.
 	if len(toks) == 2 && toks[0].Kind == token.IDENT && toks[1].Kind == token.EOF {
-		return &ast.MixinCall{Name: toks[0].Text, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		return &ast.MixinCall{Name: toks[0].Text, Line: ln.srcLine, Col: ln.srcCol}, nil
 	}
 
 	// Mixin call: name(args) consuming the whole line.
 	if name, inner, rest, ok := callSignature(toks); ok && onlyEOF(rest) {
-		args, err := parseArgs(inner, ln.lineNo)
+		args, err := parseArgs(inner, ln.srcLine)
 		if err != nil {
 			return nil, err
 		}
-		return &ast.MixinCall{Name: name, Args: args, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		return &ast.MixinCall{Name: name, Args: args, Line: ln.srcLine, Col: ln.srcCol}, nil
 	}
 
 	// Declaration: `property value...`, with an optional colon after the property.
 	if toks[0].Kind != token.IDENT {
 		// Not declaration-shaped: a bare expression statement (`700` or
 		// `(x + y) / 2` as a function body's implicit return value).
-		if e, exprErr := parseExpr(toks, ln.lineNo); exprErr == nil {
-			return &ast.ExprStmt{X: e, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		if e, exprErr := parseExpr(toks, ln.srcLine); exprErr == nil {
+			return &ast.ExprStmt{X: e, Line: ln.srcLine, Col: ln.srcCol}, nil
 		}
-		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "expected a property declaration, got %q", text)
+		return nil, diag.Errorf(ln.srcLine, ln.srcCol, "expected a property declaration, got %q", text)
 	}
 	valToks := toks[1:]
 	if valToks[0].Kind == token.COLON {
 		valToks = valToks[1:]
 	}
 	valToks, important := stripImportant(valToks)
-	val, err := parsePropExpr(valToks, ln.lineNo)
+	val, err := parsePropExpr(valToks, ln.srcLine)
 	if err != nil {
 		// Not `property value` after all: lines like `n * 2` are a bare
 		// expression statement when the whole line parses as one.
-		if e, exprErr := parseExpr(toks, ln.lineNo); exprErr == nil {
-			return &ast.ExprStmt{X: e, Line: ln.lineNo, Col: ln.indent + 1}, nil
+		if e, exprErr := parseExpr(toks, ln.srcLine); exprErr == nil {
+			return &ast.ExprStmt{X: e, Line: ln.srcLine, Col: ln.srcCol}, nil
 		}
 		return nil, err
 	}
-	return &ast.Declaration{Property: toks[0].Text, Value: val, Important: important, Line: ln.lineNo, Col: ln.indent + 1}, nil
+	decl := &ast.Declaration{Property: toks[0].Text, Value: val, Important: important, Line: ln.srcLine, Col: ln.srcCol}
+	// Token columns count runes from the start of ln.text, and ln.text starts
+	// at ln.srcCol, so the value's source column is their sum (less the
+	// double-counted 1). A value is always on the property's line: a trailing
+	// comma continues a line only after a value has begun.
+	if len(valToks) > 0 && valToks[0].Kind != token.EOF {
+		decl.ValueLine, decl.ValueCol = ln.srcLine, ln.srcCol+valToks[0].Col-1
+	}
+	return decl, nil
 }
 
 // parseBlockMixinCall parses a `+name(args)` header whose indented children
@@ -401,7 +430,7 @@ func parseLine(ln *line) (ast.Stmt, error) {
 // required and the name must touch the '+': a nested `+ li` or `+li` is an
 // adjacent-sibling selector, not a call.
 func parseBlockMixinCall(ln *line) (ast.Stmt, bool, error) {
-	toks, err := lexLine(ln.text[1:], ln.lineNo)
+	toks, err := lexLine(ln.text[1:], ln.srcLine)
 	if err != nil || len(toks) < 3 || toks[0].SpaceBefore {
 		return nil, false, nil
 	}
@@ -409,7 +438,7 @@ func parseBlockMixinCall(ln *line) (ast.Stmt, bool, error) {
 	if !ok || !onlyEOF(rest) {
 		return nil, false, nil
 	}
-	args, err := parseArgs(inner, ln.lineNo)
+	args, err := parseArgs(inner, ln.srcLine)
 	if err != nil {
 		return nil, true, err
 	}
@@ -417,7 +446,7 @@ func parseBlockMixinCall(ln *line) (ast.Stmt, bool, error) {
 	if err != nil {
 		return nil, true, err
 	}
-	return &ast.MixinCall{Name: name, Args: args, Block: body, Line: ln.lineNo, Col: ln.indent + 1}, true, nil
+	return &ast.MixinCall{Name: name, Args: args, Block: body, Line: ln.srcLine, Col: ln.srcCol}, true, nil
 }
 
 // parseMemberAssign recognizes `name(.key | [expr])+ (= | ?=) expr`. ok is
@@ -449,20 +478,20 @@ func parseMemberAssign(toks []token.Token, ln *line) (ast.Stmt, bool, error) {
 	if eq < 0 {
 		return nil, false, nil
 	}
-	target, err := parseExpr(append(toks[:eq:eq], token.Token{Kind: token.EOF, Line: ln.lineNo}), ln.lineNo)
+	target, err := parseExpr(append(toks[:eq:eq], token.Token{Kind: token.EOF, Line: ln.srcLine}), ln.srcLine)
 	if err != nil {
 		return nil, true, err
 	}
 	switch target.(type) {
 	case *ast.Member, *ast.Index:
 	default:
-		return nil, true, diag.Errorf(ln.lineNo, ln.indent+1, "invalid assignment target")
+		return nil, true, diag.Errorf(ln.srcLine, ln.srcCol, "invalid assignment target")
 	}
-	val, err := parseExpr(toks[eq+1:], ln.lineNo)
+	val, err := parseExpr(toks[eq+1:], ln.srcLine)
 	if err != nil {
 		return nil, true, err
 	}
-	return &ast.MemberAssign{Target: target, Op: toks[eq].Kind, Value: val, Line: ln.lineNo, Col: ln.indent + 1}, true, nil
+	return &ast.MemberAssign{Target: target, Op: toks[eq].Kind, Value: val, Line: ln.srcLine, Col: ln.srcCol}, true, nil
 }
 
 // stripImportant removes a trailing `!important` (lexed as NOT IDENT("important"))
@@ -491,11 +520,11 @@ func parseAtRule(ln *line) (ast.Stmt, error) {
 	}
 	name := head[1:i]
 	if name == "" {
-		return nil, diag.Errorf(ln.lineNo, ln.indent+1, "empty at-rule")
+		return nil, diag.Errorf(ln.srcLine, ln.srcCol, "empty at-rule")
 	}
 	params := strings.TrimSpace(head[i:])
 
-	at := &ast.AtRule{Name: name, Params: params, Line: ln.lineNo, Col: ln.indent + 1}
+	at := &ast.AtRule{Name: name, Params: params, Line: ln.srcLine, Col: ln.srcCol}
 	if len(ln.children) > 0 {
 		body, err := parseBlock(ln.children)
 		if err != nil {

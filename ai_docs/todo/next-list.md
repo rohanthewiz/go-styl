@@ -29,20 +29,23 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-049
+**Next ID:** N-050
 
 ## Open
 
-None.
+- **N-049** · raised `2026-0929-2350-go-styl-n003-value-source-maps` · value medium
+  Source maps name only the entry file. Positions carry no file, so a rule or
+  declaration from an `@import`ed file is mapped onto the entry file's line
+  numbers, and DevTools shows the wrong line (or one past the end). Needs a
+  file on `css.Pos`, a `sources` index in `css.SourceMap` (paths relative to
+  the map), and each imported file's text for `sourcesContent`. Listed under
+  README "Limitations".
 
 ## Roadmap
 
 Wanted, but deferred on purpose.
 
-- **N-003** · raised `2026-0624-1853-go-styl-m6a-m6b` · value low
-  Value-level source mapping. Maps are selector/declaration/at-rule granular
-  today. Still in the README's Future line; dropped from the session lists
-  after `2026-0701-2034-m11-wasm-playground-deploy`.
+None.
 
 ## Non-goals
 
@@ -69,6 +72,17 @@ Wanted, but deferred on purpose.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-003** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-29, `2026-0929-2350-go-styl-n003-value-source-maps`
+  Each declaration value gets its own segment, pointing at the value
+  expression's first character (`ast.Declaration.ValueLine/ValueCol` →
+  `css.Statement.ValuePos`); a variable maps to its use site, not its
+  definition. Positions are now true source positions in every layout:
+  `line.srcLine/srcCol` counts characters (a tab is one column, not
+  `tabWidth`), and `bracesToIndent` returns a per-output-line position
+  table (scanner `at` hook), so brace files, one-line blocks (which used to
+  drift onto later lines) and a comment before a statement all map and
+  report errors exactly. Multi-file maps → N-049.
 
 - **N-048** · raised `2026-0927-2107-go-styl-n045-n046-n047-lsp-fmt` · closed 2026-09-27, `2026-0927-2203-go-styl-n048-builtin-signatures`
   `register("darken(color, amount)", f)`: each built-in registers under its

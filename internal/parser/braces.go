@@ -41,8 +41,11 @@ func usesBraces(src string) bool {
 // anyway).
 //
 // Statements are emitted on their original source line (padding with blank
-// lines as needed) so that error positions and source maps remain accurate.
-// Only statements sharing a source line (one-liner blocks) drift downward.
+// lines as needed) so that comment attachment, which keys on line numbers,
+// still lines up. Only statements sharing a source line (one-liner blocks)
+// drift downward; the positions they report come from the returned position
+// table instead (see "Source positions" below), so errors and source maps
+// stay exact even for those.
 //
 // Mixed files. Stylus lets one file use both syntaxes — an indented mixin whose
 // body contains brace blocks, or a brace block followed by indented rules — so
@@ -67,8 +70,20 @@ func usesBraces(src string) bool {
 // line indented deeper than it becomes its sibling. This keeps pure brace files
 // (where indentation is cosmetic) behaving exactly as before, e.g. a stray
 // indent after `}` does not nest the next rule inside the closed one.
-func bracesToIndent(src string) string {
+//
+// Source positions. Re-emitting a statement at its output depth rewrites its
+// indentation, and a one-line block (`.a { x: 1; y: 2 }`) spreads over several
+// output lines, so neither the output line's indentation nor (for a one-liner)
+// its line number says where the statement sits in the source. The second
+// result records that per output line: pos[k] is the 1-based source line and
+// column of the first character of the statement on output line k+1, and the
+// zero srcPos for a padding line. buildTree copies it onto each line, and it
+// is what statement and value positions (errors, source maps) report. The
+// statement text itself is copied verbatim (only comments are dropped), so an
+// offset into it is an offset from that column.
+func bracesToIndent(src string) (string, []srcPos) {
 	runes := []rune(src)
+	var pos []srcPos
 	var out strings.Builder
 	var lineBuf strings.Builder
 	srcLine := 1 // source line currently being scanned
@@ -90,6 +105,8 @@ func bracesToIndent(src string) string {
 	var indentStack []indentEntry
 
 	// Per-statement facts captured when its first non-space character arrives.
+	scanAt := 0             // rune index of the run being buffered (the `at` hook)
+	bufCol := 0             // 1-based source column where the buffered statement began
 	bufIndent := 0          // source indentation width of the buffered statement
 	bufAtLineStart := false // statement begins its source line (vs after `;`/`}`)
 	lineFlushed := false    // something was already emitted/consumed on this line
@@ -134,6 +151,20 @@ func bracesToIndent(src string) string {
 		return depth
 	}
 
+	// colOf returns the 1-based column of runes[at]. Statements arrive in
+	// source order, so it scans forward from where the last call stopped,
+	// tracking the latest line start; counting back from each statement
+	// instead would be quadratic on a long single-line (minified) file.
+	lineStart, scannedTo := 0, 0
+	colOf := func(at int) int {
+		for ; scannedTo < at; scannedTo++ {
+			if runes[scannedTo] == '\n' {
+				lineStart = scannedTo + 1
+			}
+		}
+		return at - lineStart + 1
+	}
+
 	flush := func() {
 		s := strings.TrimSpace(lineBuf.String())
 		lineBuf.Reset()
@@ -146,6 +177,12 @@ func bracesToIndent(src string) string {
 			out.WriteByte('\n')
 			outLine++
 		}
+		// outLine is the 1-based line this statement lands on; padding lines
+		// before it have no statement and keep the zero position.
+		for len(pos) < outLine-1 {
+			pos = append(pos, srcPos{})
+		}
+		pos = append(pos, srcPos{line: bufLine, col: bufCol})
 		out.WriteString(strings.Repeat("  ", depth))
 		out.WriteString(s)
 		out.WriteByte('\n')
@@ -158,6 +195,10 @@ func bracesToIndent(src string) string {
 		if !hasContent && strings.TrimSpace(s) != "" {
 			hasContent = true
 			bufLine = srcLine
+			// The run starts at scanAt; skip any leading blanks in it.
+			// Measuring against the original runes (not lineBuf) keeps
+			// comments dropped earlier on the line in the column.
+			bufCol = colOf(scanAt + len([]rune(s)) - len([]rune(strings.TrimLeft(s, " \t"))))
 			bufAtLineStart = !lineFlushed
 			// lineBuf holds only this line's leading whitespace so far.
 			bufIndent, _ = splitIndent(lineBuf.String() + "x")
@@ -167,6 +208,7 @@ func bracesToIndent(src string) string {
 	}
 
 	scanStructural(runes, scanHandlers{
+		at:     func(i int) { scanAt = i },
 		text:   buffer,
 		interp: buffer,
 		open: func() {
@@ -200,20 +242,25 @@ func bracesToIndent(src string) string {
 		skip: func(n int) { srcLine += n },
 	})
 	flush()
-	return out.String()
+	return out.String(), pos
 }
 
 // scanHandlers receives structural events from scanStructural. Any handler may be
 // nil. block is only used by usesBraces to classify (and short-circuit on) a
 // candidate block brace; returning true stops the scan.
 type scanHandlers struct {
-	text    func(string) // run of ordinary characters (and strings) to copy
-	interp  func(string) // an interpolation `{...}` group, copied verbatim
-	open    func()       // a block-opening brace
-	close   func()       // a block-closing brace
-	semi    func()       // a top-level ';'
-	newline func()       // a source newline
-	skip    func(int)    // newlines consumed silently (inside skipped comments)
+	text   func(string) // run of ordinary characters (and strings) to copy
+	interp func(string) // an interpolation `{...}` group, copied verbatim
+	// at, when set, is told the rune index in the scanned source where the
+	// next text or interp run begins, just before that handler runs. It
+	// lets bracesToIndent recover the source column of each statement it
+	// re-emits (the text handlers carry no position of their own).
+	at      func(i int)
+	open    func()    // a block-opening brace
+	close   func()    // a block-closing brace
+	semi    func()    // a top-level ';'
+	newline func()    // a source newline
+	skip    func(int) // newlines consumed silently (inside skipped comments)
 	block   func(int, int) bool
 }
 
@@ -222,8 +269,11 @@ type scanHandlers struct {
 // are skipped (dropped). String literals are passed through via the text handler.
 func scanStructural(runes []rune, h scanHandlers) {
 	n := len(runes)
-	emitText := func(s string) {
+	emitText := func(at int, s string) {
 		if h.text != nil && s != "" {
+			if h.at != nil {
+				h.at(at)
+			}
 			h.text(s)
 		}
 	}
@@ -240,13 +290,13 @@ func scanStructural(runes []rune, h scanHandlers) {
 		switch {
 		case c == '(':
 			parens++
-			emitText("(")
+			emitText(i, "(")
 
 		case c == ')':
 			if parens > 0 {
 				parens--
 			}
-			emitText(")")
+			emitText(i, ")")
 
 		case c == '"' || c == '\'':
 			// String literal: copy verbatim, honoring escapes.
@@ -262,7 +312,7 @@ func scanStructural(runes []rune, h scanHandlers) {
 				}
 				j++
 			}
-			emitText(string(runes[i:j]))
+			emitText(i, string(runes[i:j]))
 			i = j - 1
 
 		case c == '/' && i+1 < n && runes[i+1] == '*':
@@ -296,6 +346,9 @@ func scanStructural(runes []rune, h scanHandlers) {
 			if end := matchRuneBrace(runes, i); end >= 0 &&
 				(isInterpBrace(runes, i, end) || isObjectBrace(runes, i) || string(runes[i:end+1]) == "{block}") {
 				if h.interp != nil {
+					if h.at != nil {
+						h.at(i)
+					}
 					h.interp(string(runes[i : end+1]))
 				}
 				i = end
@@ -318,7 +371,7 @@ func scanStructural(runes []rune, h scanHandlers) {
 			}
 
 		case c == ';' && parens > 0:
-			emitText(";")
+			emitText(i, ";")
 
 		case c == ';':
 			if h.semi != nil {
@@ -332,7 +385,7 @@ func scanStructural(runes []rune, h scanHandlers) {
 			}
 
 		default:
-			emitText(string(c))
+			emitText(i, string(c))
 		}
 	}
 }
