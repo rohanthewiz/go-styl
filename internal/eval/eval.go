@@ -83,6 +83,10 @@ type evaluator struct {
 	cur *execCtx
 	// sb tallies usage against opts.Sandbox (unused when that is nil).
 	sb sandboxState
+	// sources holds the text of every imported file, in first-import order,
+	// for the source map's sourcesContent (collected only when
+	// opts.SourceMap is set; see sourcemap.go).
+	sources []importedSource
 }
 
 // execCtx captures where statements emit while a block executes: the active
@@ -197,7 +201,7 @@ func EvaluateFull(sheet *ast.Stylesheet, opts Options) (cssOut, mapJSON string, 
 		}
 		return cssOut, "", deps, nil
 	}
-	sm := css.NewSourceMap(opts.OutFile, opts.SourceFile, opts.SourceContent)
+	sm := ev.newSourceMap()
 	cssOut = css.RenderSheet(nodes, opts.Pretty, sm)
 	if err := ev.checkOutput(cssOut); err != nil {
 		return "", "", nil, err
@@ -361,8 +365,8 @@ func (ev *evaluator) execStmtInner(stmt ast.Stmt, ctx *execCtx) error {
 			Property:  prop,
 			Value:     v.CSS(ev.opts.Pretty),
 			Important: s.Important,
-			Pos:       css.Pos{Line: s.Line, Col: s.Col},
-			ValuePos:  css.Pos{Line: s.ValueLine, Col: s.ValueCol},
+			Pos:       css.Pos{Line: s.Line, Col: s.Col, File: ctx.file},
+			ValuePos:  css.Pos{Line: s.ValueLine, Col: s.ValueCol, File: ctx.file},
 		})
 		return nil
 	case *ast.RuleSet:
@@ -457,7 +461,7 @@ func (ev *evaluator) evalRuleSet(rs *ast.RuleSet, ctx *execCtx) error {
 	rule := &css.Rule{
 		Selector:  joinSelectors(combined, ev.opts.Pretty),
 		Selectors: combined,
-		Pos:       css.Pos{Line: rs.Line, Col: rs.Col},
+		Pos:       css.Pos{Line: rs.Line, Col: rs.Col, File: ctx.file},
 	}
 	if allPlaceholders(combined) {
 		rule.Placeholder = true

@@ -48,9 +48,9 @@ func decodeVLQ(s string, i int) (int, int) {
 func TestEncodeMappingsRoundTrip(t *testing.T) {
 	m := &SourceMap{}
 	// gen (line, col) -> src (line, col)
-	m.add(0, 0, 0, 0)
-	m.add(1, 1, 1, 2)
-	m.add(3, 0, 5, 0)
+	m.add(0, 0, Pos{Line: 1, Col: 1})
+	m.add(1, 1, Pos{Line: 2, Col: 3})
+	m.add(3, 0, Pos{Line: 6, Col: 1})
 
 	mappings := m.encodeMappings()
 	// Three generated lines have segments; line 2 is empty -> mappings has 3 ';'.

@@ -3,7 +3,14 @@ package css
 import "strings"
 
 // Pos is a 1-based source position. A zero Line means "unknown" (no mapping).
-type Pos struct{ Line, Col int }
+//
+// File names the source file the position is in, as the evaluator knows it
+// (an @import's resolved path). "" means the entry source, whose own name may
+// also be "" (a compile of a bare string); see SourceMap.SetEntry.
+type Pos struct {
+	Line, Col int
+	File      string
+}
 
 // Printer accumulates rendered CSS while tracking the current output position, so
 // it can emit source-map segments as it goes. When sm is nil it renders only.
@@ -44,7 +51,7 @@ func (p *Printer) tabs(depth int) {
 // given source position (if mapping is enabled and the position is known).
 func (p *Printer) mark(pos Pos) {
 	if p.sm != nil && pos.Line > 0 {
-		p.sm.add(p.line, p.col, pos.Line-1, pos.Col-1)
+		p.sm.add(p.line, p.col, pos)
 	}
 }
 

@@ -33,13 +33,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 
 ## Open
 
-- **N-049** · raised `2026-0929-2350-go-styl-n003-value-source-maps` · value medium
-  Source maps name only the entry file. Positions carry no file, so a rule or
-  declaration from an `@import`ed file is mapped onto the entry file's line
-  numbers, and DevTools shows the wrong line (or one past the end). Needs a
-  file on `css.Pos`, a `sources` index in `css.SourceMap` (paths relative to
-  the map), and each imported file's text for `sourcesContent`. Listed under
-  README "Limitations".
+None.
 
 ## Roadmap
 
@@ -72,6 +66,15 @@ None.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-049** · raised `2026-0929-2350-go-styl-n003-value-source-maps` · closed 2026-09-30, `2026-0930-0127-go-styl-n049-multi-file-source-maps`
+  `css.Pos.File` carries the evaluator's file key (entry `Filename`, or an
+  import's resolved path; mixin bodies keep their defining file). An import
+  joins `sources` (with its `sourcesContent`) when a segment first points
+  into it, so variables-only partials stay out, and an unknown key gets no
+  segment. Import names read in the entry path's terms
+  (`eval.sourceName`): `testdata/imports/main.styl` → `testdata/imports/_vars.styl`,
+  absolute for an absolute entry, fs paths under `Options.FS`.
 
 - **N-003** · raised `2026-0624-1853-go-styl-m6a-m6b` · closed 2026-09-29, `2026-0929-2350-go-styl-n003-value-source-maps`
   Each declaration value gets its own segment, pointing at the value

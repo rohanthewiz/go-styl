@@ -24,7 +24,7 @@ func (ev *evaluator) evalAtRule(s *ast.AtRule, ctx *execCtx) error {
 		header += " " + params
 	}
 
-	pos := css.Pos{Line: s.Line, Col: s.Col}
+	pos := css.Pos{Line: s.Line, Col: s.Col, File: ctx.file}
 
 	if s.Body == nil {
 		*ctx.sink = append(*ctx.sink, &css.RawNode{Text: header + ";"})

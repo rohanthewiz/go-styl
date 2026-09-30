@@ -255,6 +255,7 @@ func (ev *evaluator) importFile(imp, abs string, ctx *execCtx) error {
 	if err := ev.chargeSource(imp, len(data)); err != nil {
 		return err
 	}
+	ev.noteSource(abs, data)
 	sheet, err := parser.Parse(string(data))
 	if err != nil {
 		return diag.SetFile(err, abs)

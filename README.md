@@ -62,7 +62,10 @@ Under active development -- consider this Alpha. The compiler currently supports
 - Pretty and **compressed** output, plus an optional duplicate-rule **merge** pass
 - **Source maps** (Source Map v3) mapping selectors, declarations and each
   declaration's value back to the `.styl` source (the value to the expression
-  that produced it: `color: red` maps `red` to the `c` in `color c`)
+  that produced it: `color: red` maps `red` to the `c` in `color c`). Each
+  `@import`ed file that contributes output is its own entry in `sources`, with
+  its text in `sourcesContent`; a mixin's declarations map to the file that
+  defines the mixin
 - **Positioned errors**: compile errors read `file:line:col: message` (with
   "did you mean" hints for misspelled mixins) and carry `file`/`line`/`col` as
   structured [serr](https://github.com/rohanthewiz/serr) attributes for
@@ -865,9 +868,6 @@ Things to be aware of:
   default); standard Stylus does not fold identical rule bodies.
 - Function/mixin call depth is capped at 256 and a rule's combined selector
   count at 16384, so unbounded recursion errors out instead of hanging.
-- Source maps name only the entry file: rules and declarations from an
-  `@import`ed file are mapped as if they were in the entry file, so DevTools
-  shows the wrong line for them.
 
 ## Compatibility with reference Stylus
 
