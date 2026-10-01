@@ -29,7 +29,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-050
+**Next ID:** N-051
 
 ## Open
 
@@ -66,6 +66,15 @@ None.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-050** · raised `2026-0930-0127-go-styl-n049-multi-file-source-maps` · closed 2026-10-01, `2026-1001-0030-go-styl-n050-map-relative-sources`
+  Source names relative to the map file. `Options.MapFile` (in `Filename`'s
+  terms) makes every `sources` name, the entry's included, relative to the
+  map's directory (`eval.mapRelName`, both sides in key form first); empty
+  keeps the old naming. The CLI passes `<out>.map` (`-o out/app.css
+  styles/app.styl` → `../styles/app.styl`); stylserve passes
+  `<Dir>/<cssPath>.map`, so served maps read `app.styl` instead of an
+  absolute server path.
 
 - **N-049** · raised `2026-0929-2350-go-styl-n003-value-source-maps` · closed 2026-09-30, `2026-0930-0127-go-styl-n049-multi-file-source-maps`
   `css.Pos.File` carries the evaluator's file key (entry `Filename`, or an

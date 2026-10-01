@@ -40,6 +40,7 @@ type Options struct {
 	SourceFile    string // .styl path recorded in the map's "sources"
 	SourceContent string // original source text, embedded as "sourcesContent"
 	OutFile       string // generated filename recorded in the map's "file"
+	MapFile       string // where the map is written; "sources" are named relative to it (see sourcemap.go)
 	// Sandbox, when non-nil, confines the compile for untrusted source: no
 	// OS filesystem, vetted imports, and step/time/size budgets (see
 	// sandbox.go). nil leaves every check off.

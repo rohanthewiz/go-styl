@@ -70,6 +70,15 @@ type Options struct {
 	// OutFile is the generated CSS filename recorded in a source map's "file"
 	// field (optional; used by CompileMap/CompileFileMap and Build).
 	OutFile string
+	// MapFile is the path the source map will be written to (or the place it
+	// is served from), in the same terms as Filename: an OS path, or an fs
+	// path when FS is set. When set, every name in the map's "sources" is
+	// written relative to MapFile's directory, which is how the Source Map v3
+	// spec resolves them, so a browser or tool can fetch the original files.
+	// When empty, the entry is named by Filename and each import in its
+	// terms, which is right only when the map sits where Filename is
+	// relative to. Optional; the embedded sourcesContent works either way.
+	MapFile string
 	// SourceMap asks Build/BuildFile to also produce a source map.
 	SourceMap bool
 	// Warn receives the message of each warn('…') call in the stylesheet.
@@ -157,6 +166,7 @@ func Build(src string, opts Options) (Result, error) {
 		SourceFile:       source,
 		SourceContent:    src,
 		OutFile:          opts.OutFile,
+		MapFile:          opts.MapFile,
 	})
 	if err != nil {
 		return Result{}, compileErr(err, opts.Filename)
@@ -242,6 +252,7 @@ func CompileMap(src string, opts Options) (cssOut, mapJSON string, err error) {
 		SourceFile:       source,
 		SourceContent:    src,
 		OutFile:          opts.OutFile,
+		MapFile:          opts.MapFile,
 	})
 	if err != nil {
 		return "", "", compileErr(err, opts.Filename)

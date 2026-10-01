@@ -152,6 +152,29 @@ func TestEngineSourceMaps(t *testing.T) {
 		!strings.Contains(string(m.Body), `"version":3`) {
 		t.Errorf("map = %q %q", m.ContentType, m.Body)
 	}
+	// Names are relative to the map's URL, which mirrors Dir: not the
+	// absolute server path of the source.
+	if !strings.Contains(string(m.Body), `"sources":["app.styl"]`) {
+		t.Errorf("map sources not relative to the map:\n%s", m.Body)
+	}
+}
+
+// TestEngineSourceMapNames: under an FS with a Dir, a nested stylesheet's map
+// names its entry and an import outside its directory relative to the map's
+// own location, "<Dir>/sub/page.css.map".
+func TestEngineSourceMapNames(t *testing.T) {
+	fsys := fstest.MapFS{
+		"styles/sub/page.styl":  &fstest.MapFile{Data: []byte("@import '../shared/_x'\n.p\n  margin 0\n")},
+		"styles/shared/_x.styl": &fstest.MapFile{Data: []byte(".x\n  top 0\n")},
+	}
+	eng := New(Options{FS: fsys, Dir: "styles", SourceMaps: true})
+	m, err := eng.Asset("sub/page.css.map")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(m.Body), `"sources":["page.styl","../shared/_x.styl"]`) {
+		t.Errorf("map sources:\n%s", m.Body)
+	}
 }
 
 func TestGlobalsAndCustomProperties(t *testing.T) {

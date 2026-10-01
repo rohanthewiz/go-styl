@@ -289,3 +289,82 @@ func TestSourceMapImportsFS(t *testing.T) {
 		{".a", "partials/_a.styl", ".a"},
 	})
 }
+
+// TestSourceMapMapFile: with Options.MapFile set, every "sources" name, the
+// entry's included, is relative to the map's directory, which is where the v3
+// spec resolves them from. Covers a map beside the entry, a map in a sibling
+// output directory, relative and absolute OS paths, and fs paths.
+func TestSourceMapMapFile(t *testing.T) {
+	build := func(t *testing.T, entry string, opts styl.Options) styl.Result {
+		t.Helper()
+		opts.SourceMap, opts.Pretty = true, true
+		res, err := styl.BuildFile(entry, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	t.Run("relative entry, map in output dir", func(t *testing.T) {
+		// The CLI case: styl -o out/main.css -sourcemap testdata/imports/main.styl.
+		res := build(t, "testdata/imports/main.styl", styl.Options{MapFile: "out/main.css.map"})
+		checkMap(t, res, []string{"../testdata/imports/main.styl", "../testdata/imports/_vars.styl"}, []mapCase{
+			{".btn", "../testdata/imports/main.styl", ".btn"},
+			{"background", "../testdata/imports/_vars.styl", "background c"},
+		})
+	})
+
+	t.Run("map beside entry", func(t *testing.T) {
+		res := build(t, "testdata/imports/main.styl", styl.Options{MapFile: "testdata/imports/main.css.map"})
+		checkMap(t, res, []string{"main.styl", "_vars.styl"}, []mapCase{
+			{"background", "_vars.styl", "background c"},
+		})
+	})
+
+	t.Run("absolute paths", func(t *testing.T) {
+		// Absolute entry and map give relative names, so the map stays
+		// valid when the tree moves.
+		dir := t.TempDir()
+		for name, src := range map[string]string{
+			"styles/app.styl":           "@import 'partials/_btn'\nbody\n  btn()\n",
+			"styles/partials/_btn.styl": "btn()\n  padding 2px\n",
+		} {
+			p := filepath.Join(dir, filepath.FromSlash(name))
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		res := build(t, filepath.Join(dir, "styles", "app.styl"), styl.Options{MapFile: filepath.Join(dir, "dist", "app.css.map")})
+		checkMap(t, res, []string{"../styles/app.styl", "../styles/partials/_btn.styl"}, []mapCase{
+			{"body", "../styles/app.styl", "body"},
+			{"padding", "../styles/partials/_btn.styl", "padding 2px"},
+		})
+	})
+
+	fsys := fstest.MapFS{
+		"styles/app.styl":         {Data: []byte("@import 'partials/_a'\nbody\n  x 1\n")},
+		"styles/partials/_a.styl": {Data: []byte(".a\n  x 1\n")},
+	}
+
+	t.Run("fs paths", func(t *testing.T) {
+		res := build(t, "styles/app.styl", styl.Options{FS: fsys, MapFile: "dist/app.css.map"})
+		checkMap(t, res, []string{"../styles/app.styl", "../styles/partials/_a.styl"}, []mapCase{
+			{".a", "../styles/partials/_a.styl", ".a"},
+		})
+		res = build(t, "styles/app.styl", styl.Options{FS: fsys, MapFile: "styles/app.css.map"})
+		checkMap(t, res, []string{"app.styl", "partials/_a.styl"}, nil)
+	})
+
+	t.Run("bare string", func(t *testing.T) {
+		// No Filename: the entry is "input.styl" in BaseDir, as without
+		// MapFile, then named from the map like the rest.
+		res, err := styl.Build("@import 'partials/_a'\n", styl.Options{FS: fsys, BaseDir: "styles", SourceMap: true, MapFile: "dist/x.css.map"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkMap(t, res, []string{"../styles/input.styl", "../styles/partials/_a.styl"}, nil)
+	})
+}

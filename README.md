@@ -65,7 +65,8 @@ Under active development -- consider this Alpha. The compiler currently supports
   that produced it: `color: red` maps `red` to the `c` in `color c`). Each
   `@import`ed file that contributes output is its own entry in `sources`, with
   its text in `sourcesContent`; a mixin's declarations map to the file that
-  defines the mixin
+  defines the mixin. With `Options.MapFile` (the CLI and `stylserve` set it),
+  every `sources` name is relative to the map, as the spec resolves them
 - **Positioned errors**: compile errors read `file:line:col: message` (with
   "did you mean" hints for misspelled mixins) and carry `file`/`line`/`col` as
   structured [serr](https://github.com/rohanthewiz/serr) attributes for
@@ -160,6 +161,7 @@ css, err = styl.CompileFile("styles/app.styl", styl.Options{FS: styles})
 | `BaseDir` | Directory relative `@import` paths resolve against (defaults to `Filename`'s dir). |
 | `Filename` | Source path, used in errors, to derive `BaseDir`, and as the map's `sources` entry. |
 | `OutFile` | Generated CSS filename recorded in the source map's `file` field. |
+| `MapFile` | Where the source map is written or served from (in `Filename`'s terms); `sources` names are made relative to its directory. |
 | `FS` | An `fs.FS` (e.g. `embed.FS`) that sources and `@import` resolve through instead of the OS. |
 | `SourceMap` | Ask `Build`/`BuildFile` to also produce a source map. |
 | `Globals` | Go values seeded as root-scope variables before the sheet runs (see [Runtime theming](#runtime-theming)). |
@@ -682,7 +684,9 @@ language-servers = ["styl-lsp"]
 
 Both middleware adapters compile on first request and cache, recompiling when
 the source **or any of its `@import`s** change. ETags give you free 304s, and
-`SourceMaps: true` serves `<name>.css.map` alongside for DevTools.
+`SourceMaps: true` serves `<name>.css.map` alongside for DevTools; its
+`sources` are named relative to the map's URL (`app.styl`,
+`partials/_btn.styl`), never by server path.
 
 With the standard library (`GET /css/app.css` compiles `./styles/app.styl`):
 
@@ -774,7 +778,8 @@ go run ./cmd/styl fmt -w input.styl                            # format in place
 ```
 
 `-sourcemap` requires `-o`; it writes `<out>.map` next to the CSS and appends a
-`/*# sourceMappingURL=… */` comment. `-D` and `-cssvar` are repeatable (see
+`/*# sourceMappingURL=… */` comment. The map names sources relative to itself
+(`-o out/app.css styles/app.styl` lists `../styles/app.styl`). `-D` and `-cssvar` are repeatable (see
 [Runtime theming](#runtime-theming)). The `gen` subcommand emits typed
 class/ID/keyframes/variable constants instead of CSS (see
 [Typed class names](#typed-class-names-styl-gen)); it takes `-o`, `-pkg`
@@ -854,8 +859,9 @@ to GitHub Pages on push.
 
 Things to be aware of:
 
-- Source maps map at selector / declaration / at-rule granularity (column-accurate
-  for those, including compressed output); they do not yet map inside values.
+- Source maps map selectors, declarations, at-rules and each declaration's
+  value (column-accurate, including compressed output), but not individual
+  tokens inside a value.
 - Inside `calc(...)`, bare Stylus variables are *not* evaluated (as in
   Stylus) — use interpolation: `calc(100% - {gutter})`, or `s()`/`%`.
   `url(...)` evaluates its contents when they reference a variable

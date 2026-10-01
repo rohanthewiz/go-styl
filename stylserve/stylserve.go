@@ -168,6 +168,12 @@ func (e *Engine) AssetWith(reqPath string, globals map[string]any) (*Asset, erro
 // the given root-scope globals.
 func (e *Engine) build(cssPath string, globals map[string]any) (*entry, error) {
 	srcRel := strings.TrimSuffix(cssPath, ".css") + ".styl"
+	// The map is served at "<cssPath>.map", and the URL tree mirrors the
+	// source tree under Dir, so in source terms it sits beside the .styl
+	// file. Naming sources from there gives "app.styl" and
+	// "partials/_btn.styl" instead of Dir-prefixed (or, on the OS
+	// filesystem, absolute server) paths.
+	mapRel := cssPath + ".map"
 
 	var res styl.Result
 	var err error
@@ -182,6 +188,7 @@ func (e *Engine) build(cssPath string, globals map[string]any) (*entry, error) {
 			CustomProperties: e.opts.CustomProperties,
 			SourceMap:        e.opts.SourceMaps,
 			OutFile:          path.Base(cssPath),
+			MapFile:          path.Join(rootOr(e.opts.Dir), mapRel),
 		})
 	} else {
 		src := filepath.Join(e.opts.Dir, filepath.FromSlash(srcRel))
@@ -193,6 +200,7 @@ func (e *Engine) build(cssPath string, globals map[string]any) (*entry, error) {
 			CustomProperties: e.opts.CustomProperties,
 			SourceMap:        e.opts.SourceMaps,
 			OutFile:          path.Base(cssPath),
+			MapFile:          filepath.Join(e.opts.Dir, filepath.FromSlash(mapRel)),
 		})
 	}
 	if err != nil {

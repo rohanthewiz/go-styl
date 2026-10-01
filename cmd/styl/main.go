@@ -171,6 +171,10 @@ func runWithSourceMap(in, outPath string, compress, merge bool, globals map[stri
 		Globals:          globals,
 		CustomProperties: cssVars,
 		OutFile:          filepath.Base(outPath),
+		// The map is written next to the CSS; naming sources from there
+		// lets DevTools fetch them (styles/app.styl → ../styles/app.styl
+		// for -o out/app.css).
+		MapFile: mapPath,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
