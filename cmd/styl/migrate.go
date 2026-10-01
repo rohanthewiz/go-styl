@@ -76,23 +76,19 @@ func runMigrate(args []string) {
 		fmt.Print(res.CSS)
 		return
 	}
-	if err := os.WriteFile(outPath, []byte(res.CSS), 0o644); err != nil {
+	if err := writeOutput(outPath, []byte(res.CSS)); err != nil {
 		fmt.Fprintln(os.Stderr, "error writing output:", err)
 		os.Exit(1)
 	}
 }
 
-// writeSplit writes a -split migration's files under dir, creating
-// subdirectories as the paths need. Paths come from the migration (never
+// writeSplit writes a -split migration's files under dir, creating dir and
+// subdirectories as the paths need (writeOutput). Paths come from the migration (never
 // absolute, never above the output root), so they are joined as given.
 func writeSplit(dir string, files []styl.MigratedFile, quiet bool) {
 	for _, f := range files {
 		dst := filepath.Join(dir, filepath.FromSlash(f.Path))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			fmt.Fprintln(os.Stderr, "error writing output:", err)
-			os.Exit(1)
-		}
-		if err := os.WriteFile(dst, []byte(f.CSS), 0o644); err != nil {
+		if err := writeOutput(dst, []byte(f.CSS)); err != nil {
 			fmt.Fprintln(os.Stderr, "error writing output:", err)
 			os.Exit(1)
 		}

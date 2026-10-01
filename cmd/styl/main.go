@@ -9,7 +9,8 @@
 //
 // Flags:
 //
-//	-o <file>     write output to file instead of stdout
+//	-o <file>     write output to file instead of stdout (missing
+//	              directories are created)
 //	-compress     compressed output (default is pretty/expanded)
 //	-merge        merge duplicate rule bodies into selector groups
 //	-sourcemap    also emit a source map (requires -o); appends sourceMappingURL
@@ -150,7 +151,7 @@ func main() {
 		fmt.Println(css)
 		return
 	}
-	if err := os.WriteFile(outPath, []byte(css+"\n"), 0o644); err != nil {
+	if err := writeOutput(outPath, []byte(css+"\n")); err != nil {
 		fmt.Fprintln(os.Stderr, "error writing output:", err)
 		os.Exit(1)
 	}
@@ -182,12 +183,25 @@ func runWithSourceMap(in, outPath string, compress, merge bool, globals map[stri
 	}
 
 	css += "\n/*# sourceMappingURL=" + filepath.Base(mapPath) + " */\n"
-	if err := os.WriteFile(outPath, []byte(css), 0o644); err != nil {
+	if err := writeOutput(outPath, []byte(css)); err != nil {
 		fmt.Fprintln(os.Stderr, "error writing output:", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(mapPath, []byte(mapJSON), 0o644); err != nil {
+	if err := writeOutput(mapPath, []byte(mapJSON)); err != nil {
 		fmt.Fprintln(os.Stderr, "error writing source map:", err)
 		os.Exit(1)
 	}
+}
+
+// writeOutput writes an output file, first creating any missing parent
+// directories, so `-o build/css/app.css` works in a clean checkout as other
+// compilers' -o does. Every subcommand's -o (and gen's -css) goes through it;
+// fmt -w does not, since it only rewrites files that already exist.
+func writeOutput(path string, data []byte) error {
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(path, data, 0o644)
 }

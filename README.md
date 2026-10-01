@@ -777,6 +777,7 @@ go run ./cmd/styl migrate -o out.css input.styl                # Stylus → mode
 go run ./cmd/styl fmt -w input.styl                            # format in place
 ```
 
+`-o` (and `gen -css`) create any missing output directories.
 `-sourcemap` requires `-o`; it writes `<out>.map` next to the CSS and appends a
 `/*# sourceMappingURL=… */` comment. The map names sources relative to itself
 (`-o out/app.css styles/app.styl` lists `../styles/app.styl`). `-D` and `-cssvar` are repeatable (see

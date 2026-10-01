@@ -29,7 +29,7 @@ session's attempt to compile cema's stylesheets with go-styl.
 - Nothing leaves Open or Roadmap without a line in another section.
 - Open and Roadmap stay in ID order.
 
-**Next ID:** N-051
+**Next ID:** N-052
 
 ## Open
 
@@ -66,6 +66,13 @@ None.
 
 Closures before this file was seeded (M1–M15, M6a correctness fixes, etc.)
 are recorded in the session docs.
+
+- **N-051** · raised `2026-1001-0030-go-styl-n050-map-relative-sources` · closed 2026-10-01, `2026-1001-0034-go-styl-n051-cli-output-dirs`
+  The CLI creates missing output directories. `writeOutput`
+  (`cmd/styl/main.go`) runs `MkdirAll` on the parent and then writes. It
+  is used by `-o` (CSS and `-sourcemap`'s `.map`), `gen -o`/`-css`,
+  `migrate -o` and `migrate -split`. `fmt -w` only rewrites existing
+  files, so it stays as it was.
 
 - **N-050** · raised `2026-0930-0127-go-styl-n049-multi-file-source-maps` · closed 2026-10-01, `2026-1001-0030-go-styl-n050-map-relative-sources`
   Source names relative to the map file. `Options.MapFile` (in `Filename`'s

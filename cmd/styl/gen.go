@@ -59,7 +59,7 @@ func runGen(args []string) {
 		}
 		manifest = comp.Manifest
 		if cssOut != "" {
-			if err := os.WriteFile(cssOut, []byte(comp.CSS+"\n"), 0o644); err != nil {
+			if err := writeOutput(cssOut, []byte(comp.CSS+"\n")); err != nil {
 				fmt.Fprintln(os.Stderr, "error writing CSS:", err)
 				os.Exit(1)
 			}
@@ -82,7 +82,7 @@ func runGen(args []string) {
 		os.Stdout.Write(src)
 		return
 	}
-	if err := os.WriteFile(outPath, src, 0o644); err != nil {
+	if err := writeOutput(outPath, src); err != nil {
 		fmt.Fprintln(os.Stderr, "error writing output:", err)
 		os.Exit(1)
 	}
